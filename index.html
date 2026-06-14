@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <!-- Disable page zoom; we implement pinch-zoom inside the canvas -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Paint by Numbers</title>
+  <style>
+    :root {
+      --target-w: 1620;
+      --target-h: 2160;
+      --topbar-h: 56px;
+      /* Floating palette height */
+      --palette-h: clamp(220px, 22vh, 360px);
+      --bg: #FFFFFF;
+      --panel: #FFFFFF;
+      --panel2: #FFFFFF;
+      --text: #111111;
+      --muted: #444444;
+      --accent: #6ea8ff;
+      --stroke: rgba(0,0,0,0.12);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      overscroll-behavior: none;
+      overflow: hidden;
+    }
+
+    .app {
+      height: 100vh;
+      width: 100vw;
+      position: relative;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--stroke);
+      background: #FFFFFF;
+      gap: 10px;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--topbar-h);
+      box-sizing: border-box;
+      z-index: 50;
+    }
+
+    .title {
+      font-weight: 650;
+      letter-spacing: 0.2px;
+      font-size: 14px;
+      opacity: 0.95;
+      user-select: none;
+    }
+
+    .logo {
+      height: 14px; /* match .title font-size */
+      width: auto;
+      display: block;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    select {
+      background: #FFFFFF;
+      color: var(--text);
+      border: 1px solid var(--stroke);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .canvas {
+      background: var(--panel2);
+      position: absolute;
+      inset: 0;
+      padding-top: var(--topbar-h);
+      /* Reserve space so the painting still fits in visible area */
+      padding-bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+    }
+
+    .svgWrap {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+
+    /* Injected SVG */
+    #pnb-svg {
+      width: 100%;
+      height: 100%;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      /* We handle pan/zoom ourselves */
+      touch-action: none;
+      transform-origin: 0 0;
+    }
+
+    /* Final revealed PNG */
+    .finalImage {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      display: block;
+      opacity: 0;
+      transition: opacity 2250ms ease;
+    }
+
+    .finalImage.show {
+      opacity: 1;
+    }
+
+    #pnb-svg path {
+      cursor: pointer;
+      transition: fill 120ms ease;
+    }
+
+    #pnb-svg path[data-color-num="-1"] {
+      cursor: not-allowed;
+    }
+
+    .palette {
+      border-top: 1px solid var(--stroke);
+      background: #FFFFFF;
+      padding: 10px 10px calc(16px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 10px;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: var(--palette-h);
+      z-index: 60;
+    }
+
+    .paletteHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .selected {
+      font-size: 13px;
+      color: var(--muted);
+      user-select: none;
+    }
+
+    .swatches {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 84px;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 6px;
+    }
+
+    .swatch {
+      height: 84px;
+      border-radius: 14px;
+      border: 2px solid rgba(0,0,0,0.12);
+      background: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      position: relative;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .swatchInner {
+      width: 58px;
+      height: 58px;
+      border-radius: 14px;
+      border: 1px solid rgba(0,0,0,0.20);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+    }
+
+    .swatchNum {
+      font-weight: 750;
+      font-size: 13px;
+      color: rgba(0,0,0,0.88);
+      text-shadow: none;
+    }
+
+    .swatchCount {
+      font-weight: 650;
+      font-size: 12px;
+      color: rgba(0,0,0,0.70);
+      text-shadow: none;
+      opacity: 0.95;
+      line-height: 1;
+    }
+
+    .swatchCount.empty {
+      opacity: 0.35;
+    }
+
+    .swatch.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
+    }
+
+    .swatch:active {
+      transform: translateY(1px);
+    }
+
+    .loading {
+      color: var(--muted);
+      font-size: 13px;
+      padding: 18px;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <img class="logo" src="logo.png" alt="Paint by Numbers" />
+      <div class="controls">
+        <div class="hint">Choose a color number, then tap a region</div>
+        <select id="paintingSelect" aria-label="Painting"></select>
+      </div>
+    </div>
+
+    <div class="canvas">
+      <div class="svgWrap" id="svgWrap">
+        <div class="loading" id="loading">Loading…</div>
+      </div>
+    </div>
+
+    <div class="palette">
+      <div class="paletteHeader">
+        <div class="selected" id="selectedLabel">Selected: none</div>
+      </div>
+      <div class="swatches" id="swatches"></div>
+    </div>
+  </div>
+
+  <script>
+    // Add more paintings here (must exist as paintings/<name>.svg)
+    const PAINTINGS = ['paintbynumbers'];
+
+    // Palette colors (0–63).
+    // We embed these to avoid the browser "tainted canvas" security error that can
+    // happen when reading pixels from images on some hosting/CORS setups.
+    const PALETTE = [{"num":0,"rgb":[33,26,23]},{"num":1,"rgb":[41,39,38]},{"num":2,"rgb":[52,36,29]},{"num":3,"rgb":[51,49,47]},{"num":4,"rgb":[68,61,54]},{"num":5,"rgb":[55,60,62]},{"num":6,"rgb":[55,73,82]},{"num":7,"rgb":[74,74,68]},{"num":8,"rgb":[75,82,86]},{"num":9,"rgb":[66,86,97]},{"num":10,"rgb":[76,96,106]},{"num":11,"rgb":[76,90,96]},{"num":12,"rgb":[90,96,100]},{"num":13,"rgb":[86,91,93]},{"num":14,"rgb":[85,101,110]},{"num":15,"rgb":[66,91,108]},{"num":16,"rgb":[75,101,114]},{"num":17,"rgb":[56,85,104]},{"num":18,"rgb":[84,88,78]},{"num":19,"rgb":[82,108,121]},{"num":20,"rgb":[95,108,118]},{"num":21,"rgb":[97,116,127]},{"num":22,"rgb":[110,128,135]},{"num":23,"rgb":[106,111,114]},{"num":24,"rgb":[98,103,106]},{"num":25,"rgb":[96,99,92]},{"num":26,"rgb":[105,110,99]},{"num":27,"rgb":[97,95,79]},{"num":28,"rgb":[111,117,123]},{"num":29,"rgb":[115,117,111]},{"num":30,"rgb":[121,125,125]},{"num":31,"rgb":[127,134,136]},{"num":32,"rgb":[125,122,110]},{"num":33,"rgb":[135,136,126]},{"num":34,"rgb":[138,142,142]},{"num":35,"rgb":[149,149,141]},{"num":36,"rgb":[105,101,86]},{"num":37,"rgb":[150,145,119]},{"num":38,"rgb":[168,161,143]},{"num":39,"rgb":[135,131,111]},{"num":40,"rgb":[158,159,155]},{"num":41,"rgb":[168,156,122]},{"num":42,"rgb":[149,139,102]},{"num":43,"rgb":[147,151,151]},{"num":44,"rgb":[188,166,128]},{"num":45,"rgb":[185,155,106]},{"num":46,"rgb":[213,177,120]},{"num":47,"rgb":[168,141,90]},{"num":48,"rgb":[154,126,68]},{"num":49,"rgb":[176,171,160]},{"num":50,"rgb":[221,196,147]},{"num":51,"rgb":[117,118,95]},{"num":52,"rgb":[164,148,107]},{"num":53,"rgb":[142,96,67]},{"num":54,"rgb":[133,124,98]},{"num":55,"rgb":[117,107,78]},{"num":56,"rgb":[132,118,80]},{"num":57,"rgb":[147,132,88]},{"num":58,"rgb":[92,82,65]},{"num":59,"rgb":[88,64,48]},{"num":60,"rgb":[126,101,52]},{"num":61,"rgb":[109,76,47]},{"num":62,"rgb":[71,49,38]},{"num":63,"rgb":[116,87,65]}];
+
+    function cssRgb(rgb) {
+      return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    }
+
+    // No canvas needed: palette is embedded above.
+
+    function rgbKey(rgb) {
+      return `${rgb[0]},${rgb[1]},${rgb[2]}`;
+    }
+
+    function parseFillFromStyle(styleStr) {
+      // expects: fill: rgb(r, g, b);
+      const m = /fill\s*:\s*rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\s*;?/i.exec(styleStr || '');
+      if (!m) return null;
+      return [Number(m[1]), Number(m[2]), Number(m[3])];
+    }
+
+    async function loadSvg(stem) {
+      const url = `paintings/${stem}.svg`;
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`Failed to load SVG (${res.status}): ${url}`);
+      const txt = await res.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(txt, 'image/svg+xml');
+      const svg = doc.documentElement;
+      svg.setAttribute('id', 'pnb-svg');
+      // Ensure the SVG can scale. We'll also refine the viewBox using getBBox()
+      // after insertion into the DOM (see fitSvgToWrap()). This fallback helps
+      // if getBBox isn't available for some reason.
+      if (!svg.getAttribute('viewBox')) {
+        const wAttr = svg.getAttribute('width');
+        const hAttr = svg.getAttribute('height');
+        const w = wAttr ? parseFloat(String(wAttr).replace(/[^\d.]/g, '')) : NaN;
+        const h = hAttr ? parseFloat(String(hAttr).replace(/[^\d.]/g, '')) : NaN;
+        if (Number.isFinite(w) && Number.isFinite(h)) svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      }
+
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      // Force the outer SVG element to size to its container.
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+      svg.style.display = 'block';
+      return svg;
+    }
+
+    function fitSvgToWrap(svg) {
+      // Make sure the drawing fits INSIDE .svgWrap (contain).
+      // Some SVG exports have content that extends beyond the declared width/height.
+      // Using getBBox() after insertion lets us compute the true bounds.
+      try {
+        const bbox = svg.getBBox();
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+          // getBBox() doesn't include stroke width; add a small padding so edges
+          // don't get clipped and the overall drawing looks properly contained.
+          const pad = Math.max(bbox.width, bbox.height) * 0.02; // 2% padding
+          const x = bbox.x - pad;
+          const y = bbox.y - pad;
+          const w = bbox.width + pad * 2;
+          const h = bbox.height + pad * 2;
+          svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+          svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        }
+      } catch (_e) {
+        // ignore (getBBox can fail if SVG isn't fully ready)
+      }
+    }
+
+    function wirePanZoom(svg, wrapEl) {
+      // Pan/zoom state applies a CSS transform to the SVG element.
+      const state = {
+        scale: 1,
+        tx: 0,
+        ty: 0,
+        mode: null, // 'pan' | 'pinch'
+        startX: 0,
+        startY: 0,
+        startTx: 0,
+        startTy: 0,
+        startScale: 1,
+        startDist: 0,
+        pinchSvgX: 0,
+        pinchSvgY: 0,
+      };
+
+      function apply() {
+        svg.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+      }
+
+      function clamp() {
+        const w = wrapEl.clientWidth;
+        const h = wrapEl.clientHeight;
+        if (!w || !h) return;
+
+        const scaledW = w * state.scale;
+        const scaledH = h * state.scale;
+
+        if (state.scale <= 1) {
+          state.tx = (w - scaledW) / 2;
+          state.ty = (h - scaledH) / 2;
+        } else {
+          const minTx = w - scaledW;
+          const minTy = h - scaledH;
+          if (state.tx > 0) state.tx = 0;
+          if (state.ty > 0) state.ty = 0;
+          if (state.tx < minTx) state.tx = minTx;
+          if (state.ty < minTy) state.ty = minTy;
+        }
+      }
+
+      function setScale(nextScale, centerX, centerY) {
+        const minScale = 1;
+        const maxScale = 6;
+        const s = Math.max(minScale, Math.min(maxScale, nextScale));
+
+        // Keep the point under (centerX, centerY) stable.
+        const svgX = (centerX - state.tx) / state.scale;
+        const svgY = (centerY - state.ty) / state.scale;
+        state.scale = s;
+        state.tx = centerX - svgX * state.scale;
+        state.ty = centerY - svgY * state.scale;
+        clamp();
+        apply();
+      }
+
+      // Reset to fit (scale=1, centered) after we have the final viewBox.
+      function reset() {
+        state.scale = 1;
+        state.tx = 0;
+        state.ty = 0;
+        clamp();
+        apply();
+      }
+
+      // Touch events (best support on iPad Safari)
+      function getCenter(t1, t2) {
+        const rect = wrapEl.getBoundingClientRect();
+        return {
+          x: ((t1.clientX + t2.clientX) / 2) - rect.left,
+          y: ((t1.clientY + t2.clientY) / 2) - rect.top,
+        };
+      }
+
+      function dist(t1, t2) {
+        const dx = t2.clientX - t1.clientX;
+        const dy = t2.clientY - t1.clientY;
+        return Math.hypot(dx, dy);
+      }
+
+      svg.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          state.mode = 'pan';
+          const rect = wrapEl.getBoundingClientRect();
+          state.startX = e.touches[0].clientX - rect.left;
+          state.startY = e.touches[0].clientY - rect.top;
+          state.startTx = state.tx;
+          state.startTy = state.ty;
+        } else if (e.touches.length === 2) {
+          state.mode = 'pinch';
+          state.startScale = state.scale;
+          state.startTx = state.tx;
+          state.startTy = state.ty;
+          state.startDist = dist(e.touches[0], e.touches[1]);
+          const c = getCenter(e.touches[0], e.touches[1]);
+          // Record the SVG-space point under the pinch center at start.
+          state.pinchSvgX = (c.x - state.startTx) / state.startScale;
+          state.pinchSvgY = (c.y - state.startTy) / state.startScale;
+        }
+      }, { passive: true });
+
+      svg.addEventListener('touchmove', (e) => {
+        // Prevent page scroll/zoom while interacting with the canvas.
+        e.preventDefault();
+        if (state.mode === 'pan' && e.touches.length === 1) {
+          const rect = wrapEl.getBoundingClientRect();
+          const x = e.touches[0].clientX - rect.left;
+          const y = e.touches[0].clientY - rect.top;
+          state.tx = state.startTx + (x - state.startX);
+          state.ty = state.startTy + (y - state.startY);
+          clamp();
+          apply();
+        } else if (state.mode === 'pinch' && e.touches.length === 2) {
+          const d = dist(e.touches[0], e.touches[1]);
+          if (!state.startDist) return;
+          const nextScale = state.startScale * (d / state.startDist);
+          const c = getCenter(e.touches[0], e.touches[1]);
+
+          // Scale around pinch center (using the SVG-space point captured at start).
+          const minScale = 1;
+          const maxScale = 6;
+          const s = Math.max(minScale, Math.min(maxScale, nextScale));
+          state.scale = s;
+          state.tx = c.x - state.pinchSvgX * state.scale;
+          state.ty = c.y - state.pinchSvgY * state.scale;
+          clamp();
+          apply();
+        }
+      }, { passive: false });
+
+      svg.addEventListener('touchend', (_e) => {
+        state.mode = null;
+      }, { passive: true });
+      svg.addEventListener('touchcancel', (_e) => {
+        state.mode = null;
+      }, { passive: true });
+
+      // Mouse wheel zoom (desktop)
+      svg.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = wrapEl.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        setScale(state.scale * factor, x, y);
+      }, { passive: false });
+
+      // Mouse drag pan (desktop)
+      let mouseDown = false;
+      svg.addEventListener('mousedown', (e) => {
+        mouseDown = true;
+        const rect = wrapEl.getBoundingClientRect();
+        state.mode = 'pan';
+        state.startX = e.clientX - rect.left;
+        state.startY = e.clientY - rect.top;
+        state.startTx = state.tx;
+        state.startTy = state.ty;
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!mouseDown || state.mode !== 'pan') return;
+        const rect = wrapEl.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        state.tx = state.startTx + (x - state.startX);
+        state.ty = state.startTy + (y - state.startY);
+        clamp();
+        apply();
+      });
+      window.addEventListener('mouseup', () => {
+        mouseDown = false;
+        state.mode = null;
+      });
+
+      window.addEventListener('resize', () => {
+        clamp();
+        apply();
+      });
+
+      reset();
+      return { reset };
+    }
+
+    function buildSwatches(palette) {
+      const swatches = document.getElementById('swatches');
+      swatches.innerHTML = '';
+      const counterByNum = new Map();
+      for (const c of palette) {
+        const el = document.createElement('div');
+        el.className = 'swatch';
+        el.setAttribute('role', 'button');
+        el.setAttribute('tabindex', '0');
+        el.setAttribute('aria-label', `Color ${c.num}`);
+        el.dataset.num = String(c.num);
+        el.dataset.rgb = cssRgb(c.rgb);
+
+        const inner = document.createElement('div');
+        inner.className = 'swatchInner';
+        inner.style.background = cssRgb(c.rgb);
+
+        const num = document.createElement('div');
+        num.className = 'swatchNum';
+        num.textContent = String(c.num);
+
+        const count = document.createElement('div');
+        count.className = 'swatchCount empty';
+        count.textContent = '';
+        count.dataset.num = String(c.num);
+        counterByNum.set(c.num, count);
+
+        // Layout: number (top), color square (middle), counter (bottom)
+        el.appendChild(num);
+        el.appendChild(inner);
+        el.appendChild(count);
+        swatches.appendChild(el);
+      }
+
+      // Add a cheat button at the end
+      const cheat = document.createElement('div');
+      cheat.className = 'swatch cheat';
+      cheat.id = 'cheatBtn';
+      cheat.setAttribute('role', 'button');
+      cheat.setAttribute('tabindex', '0');
+      cheat.setAttribute('aria-label', 'Cheat: fill all remaining regions');
+
+      const cheatTop = document.createElement('div');
+      cheatTop.className = 'swatchNum';
+      cheatTop.textContent = 'CHEAT';
+
+      const cheatMid = document.createElement('div');
+      cheatMid.className = 'swatchInner';
+      cheatMid.style.background = '#FFFFFF';
+      cheatMid.style.borderStyle = 'dashed';
+      cheatMid.style.borderColor = 'rgba(0,0,0,0.25)';
+
+      const cheatBottom = document.createElement('div');
+      cheatBottom.className = 'swatchCount';
+      cheatBottom.textContent = 'Fill all';
+
+      cheat.appendChild(cheatTop);
+      cheat.appendChild(cheatMid);
+      cheat.appendChild(cheatBottom);
+      swatches.appendChild(cheat);
+
+      return counterByNum;
+    }
+
+    function setSwatchCount(counterByNum, colorNum, painted, total) {
+      const el = counterByNum.get(colorNum);
+      if (!el) return;
+      if (!total || total <= 0) {
+        el.textContent = '';
+        el.classList.add('empty');
+        return;
+      }
+      el.textContent = `${painted}/${total}`;
+      el.classList.remove('empty');
+
+      // When a color is fully completed, hide its swatch.
+      if (painted >= total) {
+        const swatch = el.closest('.swatch');
+        if (swatch && swatch.id !== 'cheatBtn') {
+          swatch.style.display = 'none';
+        }
+      }
+    }
+
+    function wirePaletteSelection() {
+      let selectedNum = null;
+      let selectedRgb = null;
+
+      const selectedLabel = document.getElementById('selectedLabel');
+      const swatches = document.getElementById('swatches');
+
+      function setSelected(el) {
+        for (const node of swatches.querySelectorAll('.swatch')) node.classList.remove('active');
+        el.classList.add('active');
+        selectedNum = el.dataset.num;
+        selectedRgb = el.dataset.rgb;
+        selectedLabel.textContent = `Selected: ${selectedNum}`;
+      }
+
+      swatches.addEventListener('click', (e) => {
+        const el = e.target.closest('.swatch');
+        if (!el) return;
+        if (el.id === 'cheatBtn') return;
+        setSelected(el);
+      });
+
+      swatches.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const el = e.target.closest('.swatch');
+        if (!el) return;
+        e.preventDefault();
+        if (el.id === 'cheatBtn') return;
+        setSelected(el);
+      });
+
+      return {
+        getSelectedNum: () => selectedNum,
+        getSelectedRgb: () => selectedRgb,
+      };
+    }
+
+    function annotateSvg(svg, palette) {
+      const rgbToNum = new Map(palette.map(c => [rgbKey(c.rgb), c.num]));
+
+      const paths = svg.querySelectorAll('path');
+      for (const p of paths) {
+        // Determine the correct fill from its original style/fill.
+        const styleStr = p.getAttribute('style') || '';
+        let rgb = parseFillFromStyle(styleStr);
+        if (!rgb) {
+          const fillAttr = p.getAttribute('fill');
+          const m = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i.exec(fillAttr || '');
+          if (m) rgb = [Number(m[1]), Number(m[2]), Number(m[3])];
+        }
+
+        const num = rgb ? (rgbToNum.get(rgbKey(rgb)) ?? -1) : -1;
+        p.dataset.colorNum = String(num);
+        if (rgb) p.dataset.correctFill = cssRgb(rgb);
+        p.dataset.painted = '0';
+
+        // Hide until painted.
+        p.style.fill = 'rgb(255,255,255)';
+      }
+
+      return svg;
+    }
+
+    function wirePainting(svg, paletteSelection, onCorrectPaint) {
+      svg.addEventListener('click', (e) => {
+        const path = e.target.closest('path');
+        if (!path) return;
+
+        const selectedNum = paletteSelection.getSelectedNum();
+        const selectedRgb = paletteSelection.getSelectedRgb();
+        if (selectedNum == null || selectedRgb == null) return;
+
+        const needed = path.dataset.colorNum;
+        if (needed === selectedNum) {
+          if (path.dataset.painted === '1') return;
+          path.style.fill = selectedRgb;
+          path.dataset.painted = '1';
+          if (typeof onCorrectPaint === 'function') onCorrectPaint(path);
+        }
+      });
+    }
+
+    function revealOriginalInWrap(svgWrap) {
+      const img = document.createElement('img');
+      img.className = 'finalImage';
+      img.alt = 'Completed painting';
+      img.src = 'paintings/kroyer.png';
+
+      svgWrap.innerHTML = '';
+      svgWrap.appendChild(img);
+
+      const show = () => {
+        // Ensure we have at least one frame with opacity:0 before showing
+        requestAnimationFrame(() => img.classList.add('show'));
+      };
+      if (img.complete) show();
+      else img.addEventListener('load', show, { once: true });
+
+      // Hide the palette when complete.
+      const paletteEl = document.querySelector('.palette');
+      if (paletteEl) paletteEl.style.display = 'none';
+    }
+
+    function populatePaintingSelect() {
+      const sel = document.getElementById('paintingSelect');
+      sel.innerHTML = '';
+      for (const p of PAINTINGS) {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        sel.appendChild(opt);
+      }
+      return sel;
+    }
+
+    function getInitialPainting() {
+      const url = new URL(window.location.href);
+      const p = url.searchParams.get('painting');
+      if (p && PAINTINGS.includes(p)) return p;
+      return PAINTINGS[0];
+    }
+
+    function setUrlPainting(stem) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('painting', stem);
+      window.history.replaceState({}, '', url.toString());
+    }
+
+    async function main() {
+      const loading = document.getElementById('loading');
+      const svgWrap = document.getElementById('svgWrap');
+
+      const paintingSelect = populatePaintingSelect();
+      const initial = getInitialPainting();
+      paintingSelect.value = initial;
+      setUrlPainting(initial);
+
+      loading.textContent = 'Loading palette…';
+      const palette = PALETTE;
+      const counterByNum = buildSwatches(palette);
+      const paletteSelection = wirePaletteSelection();
+      const cheatBtn = document.getElementById('cheatBtn');
+      let cheatFn = null;
+
+      function wireCheat() {
+        if (!cheatBtn) return;
+        const run = () => {
+          if (typeof cheatFn === 'function') cheatFn();
+        };
+        cheatBtn.addEventListener('click', run);
+        cheatBtn.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          run();
+        });
+      }
+      wireCheat();
+
+      async function loadAndShow(stem) {
+        svgWrap.innerHTML = '';
+        const msg = document.createElement('div');
+        msg.className = 'loading';
+        msg.textContent = 'Loading painting…';
+        svgWrap.appendChild(msg);
+
+        // Ensure palette is visible when starting/restarting a painting.
+        const paletteEl = document.querySelector('.palette');
+        if (paletteEl) paletteEl.style.display = '';
+
+        const svg = await loadSvg(stem);
+        const annotated = annotateSvg(svg, palette);
+        svgWrap.innerHTML = '';
+        svgWrap.appendChild(annotated);
+
+        // Completion tracking: count paintable regions once per load.
+        const paintable = Array.from(annotated.querySelectorAll('path')).filter(p => p.dataset.colorNum && p.dataset.colorNum !== '-1');
+        const totalToPaint = paintable.length;
+        let paintedCount = 0;
+
+        // Per-color tracking for the palette UI.
+        const totalByNum = new Map();
+        const paintedByNum = new Map();
+        for (const p of paintable) {
+          const n = Number(p.dataset.colorNum);
+          totalByNum.set(n, (totalByNum.get(n) || 0) + 1);
+        }
+        for (const c of palette) {
+          paintedByNum.set(c.num, 0);
+          // Re-show swatches (they may have been hidden when completed)
+          const sw = document.querySelector(`.swatch[data-num="${c.num}"]`);
+          if (sw) sw.style.display = '';
+          setSwatchCount(counterByNum, c.num, 0, totalByNum.get(c.num) || 0);
+        }
+
+        function onCorrectPaint(_path) {
+          paintedCount += 1;
+          const n = Number(_path.dataset.colorNum);
+          const next = (paintedByNum.get(n) || 0) + 1;
+          paintedByNum.set(n, next);
+          setSwatchCount(counterByNum, n, next, totalByNum.get(n) || 0);
+          if (totalToPaint > 0 && paintedCount >= totalToPaint) {
+            revealOriginalInWrap(svgWrap);
+          }
+        }
+
+        // Cheat: paint everything correctly at once (only unpainted regions count)
+        cheatFn = () => {
+          for (const p of paintable) {
+            // Skip the special facetId
+            const facetId = (
+              p.getAttribute('data-facetId') ||
+              p.getAttribute('data-facetid') ||
+              p.dataset.facetId ||
+              p.dataset.facetid ||
+              ''
+            ).toString();
+            if (facetId === '397') continue;
+
+            if (p.dataset.painted === '1') continue;
+            const fill = p.dataset.correctFill;
+            if (fill) p.style.fill = fill;
+            p.dataset.painted = '1';
+            onCorrectPaint(p);
+          }
+        };
+
+        // After insertion, refine viewBox to the real drawing bounds.
+        requestAnimationFrame(() => {
+          fitSvgToWrap(annotated);
+          // Some browsers need a second frame if fonts/paths settle late.
+          requestAnimationFrame(() => {
+            fitSvgToWrap(annotated);
+            // Now wire pan/zoom on the fitted SVG
+            wirePanZoom(annotated, svgWrap);
+          });
+        });
+        wirePainting(annotated, paletteSelection, onCorrectPaint);
+      }
+
+      await loadAndShow(initial);
+
+      paintingSelect.addEventListener('change', async () => {
+        const stem = paintingSelect.value;
+        setUrlPainting(stem);
+        await loadAndShow(stem);
+      });
+    }
+
+    main().catch((err) => {
+      console.error(err);
+      const svgWrap = document.getElementById('svgWrap');
+      svgWrap.innerHTML = '';
+      const msg = document.createElement('div');
+      msg.className = 'loading';
+      const isFile = window.location.protocol === 'file:';
+      msg.textContent = isFile
+        ? 'Error: browser blocked loading files. Open this via a web server (http/https), not file://. Example: run “python -m http.server 5173” in this folder, then open http://127.0.0.1:5173/index.html'
+        : `Error: ${err.message || err}`;
+      svgWrap.appendChild(msg);
+    });
+  </script>
+</body>
+</html>
