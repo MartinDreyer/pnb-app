@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="da">
 <head>
   <meta charset="utf-8" />
   <!-- Disable page zoom; we implement pinch-zoom inside the canvas -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Paint by Numbers</title>
+  <title>Mal efter tal</title>
   <style>
     :root {
       --target-w: 1620;
       --target-h: 2160;
-      --topbar-h: 56px;
+      --topbar-h: 64px;
       /* Floating palette height */
       --palette-h: clamp(220px, 22vh, 360px);
       --bg: #FFFFFF;
@@ -39,17 +39,25 @@
 
     .topbar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 12px;
       border-bottom: 1px solid var(--stroke);
       background: #FFFFFF;
-      gap: 10px;
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
-      height: var(--topbar-h);
+      /* Height is intentionally NOT fixed: translated hint text varies in
+         length, and forcing a single line (or a hardcoded height) either
+         truncates it or clips a wrapped second line depending on language.
+         --topbar-h is measured from the real rendered height (see
+         wireTopbarHeightSync) and used by .canvas/.fitWarning to offset
+         around whatever that turns out to be. min-height is just the
+         pre-JS-measurement fallback. */
+      min-height: var(--topbar-h);
       box-sizing: border-box;
       z-index: 50;
     }
@@ -68,12 +76,6 @@
       display: block;
     }
 
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
     select {
       background: #FFFFFF;
       color: var(--text);
@@ -84,11 +86,15 @@
       outline: none;
     }
 
+    /* Sits on its own full-width row under the logo, so the whole line is
+       always visible instead of competing for space with other elements.
+       Wraps rather than truncating — translated text length is unpredictable. */
     .hint {
       font-size: 12px;
+      line-height: 1.35;
       color: var(--muted);
       user-select: none;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .canvas {
@@ -107,6 +113,13 @@
     .svgWrap {
       width: 100%;
       height: 100%;
+      /* Grid items default to min-width/min-height:auto, which for a replaced element
+         with an intrinsic aspect ratio (our SVG/img below) can demand more height than
+         is actually available. Combined with .canvas's overflow:hidden, that silently
+         crops the bottom instead of letting preserveAspectRatio/object-fit do their job.
+         min-height/min-width:0 forces this box to actually respect its constrained size. */
+      min-width: 0;
+      min-height: 0;
       display: grid;
       place-items: center;
       padding: 12px;
@@ -117,6 +130,8 @@
     #pnb-svg {
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
       background: white;
       border-radius: 14px;
       box-shadow: 0 12px 40px rgba(0,0,0,0.35);
@@ -129,6 +144,8 @@
     .finalImage {
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
       object-fit: contain;
       background: white;
       border-radius: 14px;
@@ -144,11 +161,34 @@
 
     #pnb-svg path {
       cursor: pointer;
-      transition: fill 120ms ease;
+      transition: fill 60ms linear;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
     }
 
     #pnb-svg path[data-color-num="-1"] {
       cursor: not-allowed;
+    }
+
+    @keyframes pnbWrongTap {
+      0% { opacity: 1; }
+      45% { opacity: 0.32; }
+      100% { opacity: 1; }
+    }
+
+    #pnb-svg path.pnb-wrong {
+      animation: pnbWrongTap 170ms ease;
+    }
+
+    @keyframes pnbHintPulse {
+      0%, 100% { stroke: rgba(255, 90, 90, 0.95); stroke-width: 3; }
+      50% { stroke: rgba(255, 90, 90, 0.15); stroke-width: 6; }
+    }
+
+    #pnb-svg path.pnb-hint {
+      animation: pnbHintPulse 700ms ease-in-out 3;
+      paint-order: stroke;
     }
 
     .palette {
@@ -180,6 +220,13 @@
       user-select: none;
     }
 
+    .swatchesWrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+    }
+
     .swatches {
       display: grid;
       grid-auto-flow: column;
@@ -188,7 +235,46 @@
       overflow-x: auto;
       overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
-      padding-bottom: 6px;
+      /* Top/right padding gives the .swatchCheck badge (which pokes outside
+         its .swatch's own box) room so this container's overflow-y: hidden
+         doesn't clip it. */
+      padding: 10px 10px 6px 0;
+      height: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Edge fades signal there are more colors to scroll to — without them,
+       the row can look like a short, complete list on narrow screens. */
+    .edgeFade {
+      position: absolute;
+      top: 0;
+      bottom: 6px;
+      width: 34px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 200ms ease;
+      display: flex;
+      align-items: center;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--muted);
+      z-index: 5;
+    }
+
+    .edgeFade.show {
+      opacity: 1;
+    }
+
+    .edgeFade.left {
+      left: 0;
+      justify-content: flex-start;
+      background: linear-gradient(to right, #FFFFFF 45%, rgba(255,255,255,0));
+    }
+
+    .edgeFade.right {
+      right: 0;
+      justify-content: flex-end;
+      background: linear-gradient(to left, #FFFFFF 45%, rgba(255,255,255,0));
     }
 
     .swatch {
@@ -243,52 +329,386 @@
       transform: translateY(1px);
     }
 
+    /* Completed colors move to the end of the row and dim, rather than
+       disappearing — they stay visible as a record of progress. */
+    .swatch.done {
+      order: 50;
+      opacity: 0.5;
+    }
+
+    .swatchCheck {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #2a9d8f;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      opacity: 0;
+      transform: scale(0.5);
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+
+    .swatch.done .swatchCheck {
+      opacity: 1;
+      transform: scale(1);
+    }
+
     .loading {
       color: var(--muted);
       font-size: 13px;
       padding: 18px;
       user-select: none;
     }
+
+    .fitWarning {
+      position: fixed;
+      top: calc(var(--topbar-h) + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 70;
+      background: #fff3cd;
+      color: #664d03;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      max-width: calc(100vw - 24px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      display: none;
+    }
+
+    .fitWarning.show {
+      display: block;
+    }
+
+    /* Zoom affordance: one-time animated hint + persistent controls */
+    .zoomHint {
+      position: fixed;
+      left: 50%;
+      top: calc(var(--topbar-h) + 40%);
+      transform: translate(-50%, -50%);
+      z-index: 65;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 400ms ease;
+    }
+
+    .zoomHint.show {
+      opacity: 1;
+    }
+
+    .zoomHintIcon {
+      font-size: 40px;
+      animation: pnbPinch 1400ms ease-in-out infinite;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.35));
+    }
+
+    @keyframes pnbPinch {
+      0%, 100% { transform: scale(0.85); }
+      50% { transform: scale(1.15); }
+    }
+
+    .zoomHintText {
+      background: rgba(0,0,0,0.72);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .zoomControls {
+      position: fixed;
+      right: 12px;
+      bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px) + 14px);
+      z-index: 55;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .zoomBtn {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+
+    .zoomBtn:active {
+      transform: translateY(1px);
+    }
+
+    /* Hint button */
+    .hintBtn {
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--text);
+      background: #FFFFFF;
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 6px 12px;
+      user-select: none;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+
+    .hintBtn:active {
+      transform: translateY(1px);
+    }
+
+    .hintBtn[disabled] {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Completion trivia panel */
+    .triviaPanel {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #FFFFFF;
+      border-top: 1px solid var(--stroke);
+      box-shadow: 0 -8px 28px rgba(0,0,0,0.18);
+      padding: 14px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+      max-height: 42vh;
+      overflow-y: auto;
+      z-index: 60;
+      transform: translateY(100%);
+      transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .triviaPanel.show {
+      transform: translateY(0);
+    }
+
+    .triviaClose {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 18px;
+      line-height: 1;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      user-select: none;
+    }
+
+    .triviaTitle {
+      font-weight: 750;
+      font-size: 15px;
+      margin: 0 28px 2px 0;
+    }
+
+    .triviaArtist {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .triviaGrid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      font-size: 13px;
+      margin: 0 0 10px 0;
+    }
+
+    .triviaGrid dt {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .triviaGrid dd {
+      margin: 0;
+    }
+
+    .triviaFact {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .triviaLoading {
+      font-size: 13px;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
   <div class="app">
+    <div class="fitWarning" id="fitWarning" data-i18n="fitWarning"></div>
     <div class="topbar">
-      <img class="logo" src="logo.png" alt="Paint by Numbers" />
-      <div class="controls">
-        <div class="hint">Choose a color number, then tap a region</div>
-        <select id="paintingSelect" aria-label="Painting"></select>
-      </div>
+      <img class="logo" src="logo.png" alt="" data-i18n-alt="logoAlt" />
+      <!-- Deliberately doesn't show the painting's title/artist — that's
+           part of the game: guess what you're painting as you go. The real
+           title is revealed in the trivia panel on completion instead. -->
+      <div class="hint" data-i18n="topbarHint"></div>
     </div>
 
     <div class="canvas">
       <div class="svgWrap" id="svgWrap">
-        <div class="loading" id="loading">Loading…</div>
+        <div class="loading" id="loading" data-i18n="loading"></div>
       </div>
+    </div>
+
+    <div class="zoomHint" id="zoomHint">
+      <div class="zoomHintIcon">🤏</div>
+      <div class="zoomHintText" data-i18n="zoomHintText"></div>
+    </div>
+
+    <div class="zoomControls" id="zoomControls">
+      <div class="zoomBtn" id="zoomInBtn" role="button" tabindex="0" data-i18n-aria="zoomInLabel">+</div>
+      <div class="zoomBtn" id="zoomOutBtn" role="button" tabindex="0" data-i18n-aria="zoomOutLabel">–</div>
+      <div class="zoomBtn" id="zoomResetBtn" role="button" tabindex="0" data-i18n-aria="zoomResetLabel">⤢</div>
     </div>
 
     <div class="palette">
       <div class="paletteHeader">
-        <div class="selected" id="selectedLabel">Selected: none</div>
+        <div class="selected" id="selectedLabel" data-i18n="selectedNone"></div>
+        <div class="hintBtn" id="hintBtn" role="button" tabindex="0" data-i18n-aria="hintButtonLabel"></div>
       </div>
-      <div class="swatches" id="swatches"></div>
+      <div class="swatchesWrap">
+        <div class="swatches" id="swatches"></div>
+        <div class="edgeFade left" id="swatchFadeLeft" aria-hidden="true">‹</div>
+        <div class="edgeFade right" id="swatchFadeRight" aria-hidden="true">›</div>
+      </div>
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script>
-    // Add more paintings here (must exist as paintings/<name>.svg)
-    const PAINTINGS = ['paintbynumbers'];
+    // SUPABASE_URL / SUPABASE_ANON_KEY come from config.js (checked in for local dev,
+    // swap per environment).
+    const SUPABASE_URL = window.PNB_CONFIG.SUPABASE_URL;
+    const SUPABASE_ANON_KEY = window.PNB_CONFIG.SUPABASE_ANON_KEY;
 
-    // Palette colors (0–63).
-    // We embed these to avoid the browser "tainted canvas" security error that can
-    // happen when reading pixels from images on some hosting/CORS setups.
-    const PALETTE = [{"num":0,"rgb":[33,26,23]},{"num":1,"rgb":[41,39,38]},{"num":2,"rgb":[52,36,29]},{"num":3,"rgb":[51,49,47]},{"num":4,"rgb":[68,61,54]},{"num":5,"rgb":[55,60,62]},{"num":6,"rgb":[55,73,82]},{"num":7,"rgb":[74,74,68]},{"num":8,"rgb":[75,82,86]},{"num":9,"rgb":[66,86,97]},{"num":10,"rgb":[76,96,106]},{"num":11,"rgb":[76,90,96]},{"num":12,"rgb":[90,96,100]},{"num":13,"rgb":[86,91,93]},{"num":14,"rgb":[85,101,110]},{"num":15,"rgb":[66,91,108]},{"num":16,"rgb":[75,101,114]},{"num":17,"rgb":[56,85,104]},{"num":18,"rgb":[84,88,78]},{"num":19,"rgb":[82,108,121]},{"num":20,"rgb":[95,108,118]},{"num":21,"rgb":[97,116,127]},{"num":22,"rgb":[110,128,135]},{"num":23,"rgb":[106,111,114]},{"num":24,"rgb":[98,103,106]},{"num":25,"rgb":[96,99,92]},{"num":26,"rgb":[105,110,99]},{"num":27,"rgb":[97,95,79]},{"num":28,"rgb":[111,117,123]},{"num":29,"rgb":[115,117,111]},{"num":30,"rgb":[121,125,125]},{"num":31,"rgb":[127,134,136]},{"num":32,"rgb":[125,122,110]},{"num":33,"rgb":[135,136,126]},{"num":34,"rgb":[138,142,142]},{"num":35,"rgb":[149,149,141]},{"num":36,"rgb":[105,101,86]},{"num":37,"rgb":[150,145,119]},{"num":38,"rgb":[168,161,143]},{"num":39,"rgb":[135,131,111]},{"num":40,"rgb":[158,159,155]},{"num":41,"rgb":[168,156,122]},{"num":42,"rgb":[149,139,102]},{"num":43,"rgb":[147,151,151]},{"num":44,"rgb":[188,166,128]},{"num":45,"rgb":[185,155,106]},{"num":46,"rgb":[213,177,120]},{"num":47,"rgb":[168,141,90]},{"num":48,"rgb":[154,126,68]},{"num":49,"rgb":[176,171,160]},{"num":50,"rgb":[221,196,147]},{"num":51,"rgb":[117,118,95]},{"num":52,"rgb":[164,148,107]},{"num":53,"rgb":[142,96,67]},{"num":54,"rgb":[133,124,98]},{"num":55,"rgb":[117,107,78]},{"num":56,"rgb":[132,118,80]},{"num":57,"rgb":[147,132,88]},{"num":58,"rgb":[92,82,65]},{"num":59,"rgb":[88,64,48]},{"num":60,"rgb":[126,101,52]},{"num":61,"rgb":[109,76,47]},{"num":62,"rgb":[71,49,38]},{"num":63,"rgb":[116,87,65]}];
+    // UI language. Defaults to Danish; set window.PNB_CONFIG.LANG in config.js
+    // to switch (falls back to Danish if that language's file is missing).
+    // Translation strings live in i18n/<lang>.json, not hardcoded here, so
+    // adding a language later is just adding a new JSON file.
+    const LANG = (window.PNB_CONFIG && window.PNB_CONFIG.LANG) || 'da';
+    const FALLBACK_LANG = 'da';
+    let I18N = {};
+
+    async function loadTranslations(lang) {
+      try {
+        const res = await fetch(`i18n/${lang}.json`, { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        if (lang !== FALLBACK_LANG) {
+          console.warn(`Falling back to "${FALLBACK_LANG}" translations (couldn't load "${lang}"):`, err);
+          return loadTranslations(FALLBACK_LANG);
+        }
+        console.error('Failed to load translations; falling back to raw keys.', err);
+        return {};
+      }
+    }
+
+    // Simple {{placeholder}} substitution — no plural rules, no nesting.
+    // Falls back to the raw key so a missing translation is visible/obvious
+    // rather than silently blank.
+    function t(key, vars) {
+      let str = I18N[key] || key;
+      if (vars) {
+        for (const k of Object.keys(vars)) str = str.split(`{{${k}}}`).join(String(vars[k]));
+      }
+      return str;
+    }
+
+    function applyStaticTranslations() {
+      document.title = t('appTitle');
+      for (const el of document.querySelectorAll('[data-i18n]')) {
+        el.textContent = t(el.dataset.i18n);
+      }
+      for (const el of document.querySelectorAll('[data-i18n-aria]')) {
+        el.setAttribute('aria-label', t(el.dataset.i18nAria));
+      }
+      for (const el of document.querySelectorAll('[data-i18n-alt]')) {
+        el.setAttribute('alt', t(el.dataset.i18nAlt));
+      }
+    }
+
+    // Keeps --topbar-h in sync with the topbar's real rendered height, which
+    // varies with translated text length (one line in English, maybe two in
+    // a longer language) and viewport width. .canvas/.fitWarning read this
+    // var to offset around the topbar, so a hardcoded height would either
+    // truncate text or let it overlap the canvas depending on language.
+    function wireTopbarHeightSync() {
+      const topbar = document.querySelector('.topbar');
+      if (!topbar || typeof ResizeObserver === 'undefined') return;
+      const sync = () => {
+        document.documentElement.style.setProperty('--topbar-h', `${Math.ceil(topbar.getBoundingClientRect().height)}px`);
+      };
+      new ResizeObserver(sync).observe(topbar);
+      sync();
+    }
+
+    function storagePublicUrl(path) {
+      return `${SUPABASE_URL}/storage/v1/object/public/puzzles/${path}`;
+    }
+
+    // The "current puzzle" is whichever rotation_schedule row's active_from/active_until
+    // window contains right now (see pnb-database's schema docs). RLS on the anon key
+    // only ever exposes published puzzles.
+    async function fetchActivePuzzle() {
+      const nowIso = new Date().toISOString();
+      const params = new URLSearchParams({
+        select: 'id,active_from,active_until,puzzles(id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist))',
+        active_from: `lte.${nowIso}`,
+        active_until: `gte.${nowIso}`,
+        order: 'active_from.desc',
+        limit: '1',
+      });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/rotation_schedule?${params.toString()}`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      });
+      if (!res.ok) throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
+      const rows = await res.json();
+      if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
+      const row = rows[0];
+      return {
+        puzzleId: row.puzzles.id,
+        palette: row.puzzles.palette, // [{num, rgb: [r,g,b]}, ...] — same shape the UI already expects
+        svgUrl: storagePublicUrl(row.puzzles.svg_storage_path),
+        referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
+        title: row.puzzles.paintings ? row.puzzles.paintings.title : '',
+        artist: row.puzzles.paintings ? row.puzzles.paintings.artist : '',
+      };
+    }
 
     function cssRgb(rgb) {
       return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
     }
-
-    // No canvas needed: palette is embedded above.
 
     function rgbKey(rgb) {
       return `${rgb[0]},${rgb[1]},${rgb[2]}`;
@@ -301,10 +721,9 @@
       return [Number(m[1]), Number(m[2]), Number(m[3])];
     }
 
-    async function loadSvg(stem) {
-      const url = `paintings/${stem}.svg`;
+    async function loadSvg(url) {
       const res = await fetch(url, { cache: 'no-cache' });
-      if (!res.ok) throw new Error(`Failed to load SVG (${res.status}): ${url}`);
+      if (!res.ok) throw new Error(t('errorLoadSvgFailed', { status: res.status, url }));
       const txt = await res.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(txt, 'image/svg+xml');
@@ -353,7 +772,38 @@
       }
     }
 
-    function wirePanZoom(svg, wrapEl) {
+    // Belt-and-suspenders check: confirm the rendered element is actually fully
+    // contained within its wrapper (a couple of CSS px of rounding is fine). If it's
+    // ever not — a future regression, an unusual device viewport, etc. — surface a
+    // visible warning instead of silently letting the bottom get clipped off.
+    function checkFitsWithinWrap(el, wrapEl) {
+      const warningEl = document.getElementById('fitWarning');
+      if (!warningEl) return;
+      const elRect = el.getBoundingClientRect();
+      const wrapRect = wrapEl.getBoundingClientRect();
+      const tolerance = 1;
+      const fits =
+        elRect.width > 0 &&
+        elRect.height > 0 &&
+        elRect.top >= wrapRect.top - tolerance &&
+        elRect.left >= wrapRect.left - tolerance &&
+        elRect.bottom <= wrapRect.bottom + tolerance &&
+        elRect.right <= wrapRect.right + tolerance;
+      warningEl.classList.toggle('show', !fits);
+      if (!fits) {
+        console.warn('Puzzle does not fully fit its container', { elRect, wrapRect });
+      }
+    }
+
+    const MIN_ZOOM = 1;
+    const MAX_ZOOM = 5;
+
+    // Combines pan/zoom with tap-to-paint. Touch taps are detected directly
+    // from touchstart/touchend (movement + duration thresholds) and painted
+    // immediately, rather than waiting on a browser-synthesized 'click' —
+    // which after our own pan/zoom transform is often delayed or dropped
+    // entirely, making taps feel unresponsive on phones/tablets.
+    function wireCanvasInteractions(svg, wrapEl, paletteSelection, onCorrectPaint) {
       // Pan/zoom state applies a CSS transform to the SVG element.
       const state = {
         scale: 1,
@@ -368,7 +818,37 @@
         startDist: 0,
         pinchSvgX: 0,
         pinchSvgY: 0,
+        tapStartX: 0,
+        tapStartY: 0,
+        tapStartTime: 0,
+        tapMoved: false,
+        suppressClickUntil: 0,
       };
+
+      const TAP_MOVE_THRESHOLD = 14; // px
+      const TAP_MAX_DURATION = 350; // ms
+
+      function attemptPaint(path) {
+        if (!path) return;
+        const selectedNum = paletteSelection.getSelectedNum();
+        const selectedRgb = paletteSelection.getSelectedRgb();
+        if (selectedNum == null || selectedRgb == null) return;
+
+        const needed = path.dataset.colorNum;
+        if (needed !== selectedNum) {
+          if (needed !== '-1') {
+            path.classList.remove('pnb-wrong');
+            // Force reflow so a rapid re-tap re-triggers the animation.
+            void path.offsetWidth;
+            path.classList.add('pnb-wrong');
+          }
+          return;
+        }
+        if (path.dataset.painted === '1') return;
+        path.style.fill = selectedRgb;
+        path.dataset.painted = '1';
+        if (typeof onCorrectPaint === 'function') onCorrectPaint(path);
+      }
 
       function apply() {
         svg.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
@@ -396,9 +876,7 @@
       }
 
       function setScale(nextScale, centerX, centerY) {
-        const minScale = 1;
-        const maxScale = 6;
-        const s = Math.max(minScale, Math.min(maxScale, nextScale));
+        const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextScale));
 
         // Keep the point under (centerX, centerY) stable.
         const svgX = (centerX - state.tx) / state.scale;
@@ -410,6 +888,28 @@
         apply();
       }
 
+      // Zoom in/out one step, centered on the wrap's visible middle — used by
+      // the on-screen +/- buttons so zoom feels controlled and deliberate.
+      function stepScale(factor) {
+        const w = wrapEl.clientWidth;
+        const h = wrapEl.clientHeight;
+        setScale(state.scale * factor, w / 2, h / 2);
+      }
+
+      // Pan/zoom so the given point (in the SVG element's own untransformed
+      // CSS-pixel box) is centered in the wrap, at the given scale. Used by
+      // the hint feature to jump to an unpainted region.
+      function focusOnLocalPoint(lx, ly, targetScale) {
+        const w = wrapEl.clientWidth;
+        const h = wrapEl.clientHeight;
+        const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetScale));
+        state.scale = s;
+        state.tx = w / 2 - s * lx;
+        state.ty = h / 2 - s * ly;
+        clamp();
+        apply();
+      }
+
       // Reset to fit (scale=1, centered) after we have the final viewBox.
       function reset() {
         state.scale = 1;
@@ -417,6 +917,12 @@
         state.ty = 0;
         clamp();
         apply();
+      }
+
+      function dismissZoomHint() {
+        const el = document.getElementById('zoomHint');
+        if (el) el.classList.remove('show');
+        try { localStorage.setItem('pnb_zoom_hint_seen', '1'); } catch (_e) { /* ignore */ }
       }
 
       // Touch events (best support on iPad Safari)
@@ -435,6 +941,7 @@
       }
 
       svg.addEventListener('touchstart', (e) => {
+        dismissZoomHint();
         if (e.touches.length === 1) {
           state.mode = 'pan';
           const rect = wrapEl.getBoundingClientRect();
@@ -442,7 +949,15 @@
           state.startY = e.touches[0].clientY - rect.top;
           state.startTx = state.tx;
           state.startTy = state.ty;
+
+          // Tap tracking (independent of pan, which only kicks in once the
+          // finger actually moves past the threshold below).
+          state.tapStartX = e.touches[0].clientX;
+          state.tapStartY = e.touches[0].clientY;
+          state.tapStartTime = Date.now();
+          state.tapMoved = false;
         } else if (e.touches.length === 2) {
+          state.tapMoved = true; // a second finger means this isn't a tap
           state.mode = 'pinch';
           state.startScale = state.scale;
           state.startTx = state.tx;
@@ -466,6 +981,13 @@
           state.ty = state.startTy + (y - state.startY);
           clamp();
           apply();
+          // Judge "was this a tap or a drag" by how far the artwork actually
+          // moved on screen (post-clamp), not raw finger movement. At the
+          // default zoom level clamp() pins tx/ty in place, so ordinary
+          // finger jitter during a tap never gets misread as a drag.
+          const movedX = Math.abs(state.tx - state.startTx);
+          const movedY = Math.abs(state.ty - state.startTy);
+          if (movedX > TAP_MOVE_THRESHOLD || movedY > TAP_MOVE_THRESHOLD) state.tapMoved = true;
         } else if (state.mode === 'pinch' && e.touches.length === 2) {
           const d = dist(e.touches[0], e.touches[1]);
           if (!state.startDist) return;
@@ -473,9 +995,7 @@
           const c = getCenter(e.touches[0], e.touches[1]);
 
           // Scale around pinch center (using the SVG-space point captured at start).
-          const minScale = 1;
-          const maxScale = 6;
-          const s = Math.max(minScale, Math.min(maxScale, nextScale));
+          const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextScale));
           state.scale = s;
           state.tx = c.x - state.pinchSvgX * state.scale;
           state.ty = c.y - state.pinchSvgY * state.scale;
@@ -484,16 +1004,34 @@
         }
       }, { passive: false });
 
-      svg.addEventListener('touchend', (_e) => {
+      svg.addEventListener('touchend', (e) => {
+        const wasPan = state.mode === 'pan';
         state.mode = null;
+        if (!wasPan || state.tapMoved) return;
+        if (Date.now() - state.tapStartTime > TAP_MAX_DURATION) return;
+        // A clean, un-moved, quick single-finger touch: paint immediately
+        // instead of waiting on a synthetic click event.
+        const el = document.elementFromPoint(state.tapStartX, state.tapStartY);
+        const path = el ? el.closest('path') : null;
+        if (path) attemptPaint(path);
+        state.suppressClickUntil = Date.now() + 600;
       }, { passive: true });
       svg.addEventListener('touchcancel', (_e) => {
         state.mode = null;
       }, { passive: true });
 
+      // Mouse/keyboard/fallback path — ignored right after a touch tap already
+      // handled the paint, so a delayed synthetic click doesn't double-fire.
+      svg.addEventListener('click', (e) => {
+        if (Date.now() < state.suppressClickUntil) return;
+        const path = e.target.closest('path');
+        if (path) attemptPaint(path);
+      });
+
       // Mouse wheel zoom (desktop)
       svg.addEventListener('wheel', (e) => {
         e.preventDefault();
+        dismissZoomHint();
         const rect = wrapEl.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -504,6 +1042,7 @@
       // Mouse drag pan (desktop)
       let mouseDown = false;
       svg.addEventListener('mousedown', (e) => {
+        dismissZoomHint();
         mouseDown = true;
         const rect = wrapEl.getBoundingClientRect();
         state.mode = 'pan';
@@ -533,7 +1072,7 @@
       });
 
       reset();
-      return { reset };
+      return { reset, setScale, stepScale, focusOnLocalPoint, getScale: () => state.scale };
     }
 
     function buildSwatches(palette) {
@@ -545,7 +1084,7 @@
         el.className = 'swatch';
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
-        el.setAttribute('aria-label', `Color ${c.num}`);
+        el.setAttribute('aria-label', t('colorAriaLabel', { num: c.num }));
         el.dataset.num = String(c.num);
         el.dataset.rgb = cssRgb(c.rgb);
 
@@ -563,24 +1102,30 @@
         count.dataset.num = String(c.num);
         counterByNum.set(c.num, count);
 
+        const check = document.createElement('div');
+        check.className = 'swatchCheck';
+        check.textContent = '✓';
+
         // Layout: number (top), color square (middle), counter (bottom)
         el.appendChild(num);
         el.appendChild(inner);
         el.appendChild(count);
+        el.appendChild(check);
         swatches.appendChild(el);
       }
 
-      // Add a cheat button at the end
+      // Add a cheat button at the end — always after any completed colors.
       const cheat = document.createElement('div');
       cheat.className = 'swatch cheat';
+      cheat.style.order = '100';
       cheat.id = 'cheatBtn';
       cheat.setAttribute('role', 'button');
       cheat.setAttribute('tabindex', '0');
-      cheat.setAttribute('aria-label', 'Cheat: fill all remaining regions');
+      cheat.setAttribute('aria-label', t('cheatAriaLabel'));
 
       const cheatTop = document.createElement('div');
       cheatTop.className = 'swatchNum';
-      cheatTop.textContent = 'CHEAT';
+      cheatTop.textContent = t('cheatTop');
 
       const cheatMid = document.createElement('div');
       cheatMid.className = 'swatchInner';
@@ -590,7 +1135,7 @@
 
       const cheatBottom = document.createElement('div');
       cheatBottom.className = 'swatchCount';
-      cheatBottom.textContent = 'Fill all';
+      cheatBottom.textContent = t('cheatBottom');
 
       cheat.appendChild(cheatTop);
       cheat.appendChild(cheatMid);
@@ -598,6 +1143,40 @@
       swatches.appendChild(cheat);
 
       return counterByNum;
+    }
+
+    // The swatch row scrolls horizontally, but on a narrow phone only ~4
+    // colors fit on screen at once — without a cue, it can look like the
+    // whole palette rather than a scrollable strip. Edge fades signal
+    // there's more in whichever direction still has content, and a one-time
+    // nudge scroll (per browser) makes the scrollability unmistakable.
+    function wireSwatchScrollHints(swatchesEl) {
+      const leftFade = document.getElementById('swatchFadeLeft');
+      const rightFade = document.getElementById('swatchFadeRight');
+      if (!leftFade || !rightFade) return;
+
+      function update() {
+        const hasOverflow = swatchesEl.scrollWidth > swatchesEl.clientWidth + 1;
+        leftFade.classList.toggle('show', hasOverflow && swatchesEl.scrollLeft > 4);
+        rightFade.classList.toggle(
+          'show',
+          hasOverflow && swatchesEl.scrollLeft < swatchesEl.scrollWidth - swatchesEl.clientWidth - 4
+        );
+      }
+
+      swatchesEl.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', update);
+      update();
+
+      let seen = false;
+      try { seen = localStorage.getItem('pnb_swatch_hint_seen') === '1'; } catch (_e) { /* ignore */ }
+      if (!seen && swatchesEl.scrollWidth > swatchesEl.clientWidth + 1) {
+        setTimeout(() => {
+          swatchesEl.scrollTo({ left: 46, behavior: 'smooth' });
+          setTimeout(() => swatchesEl.scrollTo({ left: 0, behavior: 'smooth' }), 550);
+        }, 500);
+        try { localStorage.setItem('pnb_swatch_hint_seen', '1'); } catch (_e) { /* ignore */ }
+      }
     }
 
     function setSwatchCount(counterByNum, colorNum, painted, total) {
@@ -611,12 +1190,12 @@
       el.textContent = `${painted}/${total}`;
       el.classList.remove('empty');
 
-      // When a color is fully completed, hide its swatch.
-      if (painted >= total) {
-        const swatch = el.closest('.swatch');
-        if (swatch && swatch.id !== 'cheatBtn') {
-          swatch.style.display = 'none';
-        }
+      // When a color is fully completed, move its swatch to the end of the
+      // row and mark it done instead of hiding it — keeps a visible record
+      // of progress rather than making colors vanish.
+      const swatch = el.closest('.swatch');
+      if (swatch && swatch.id !== 'cheatBtn') {
+        swatch.classList.toggle('done', painted >= total);
       }
     }
 
@@ -632,7 +1211,7 @@
         el.classList.add('active');
         selectedNum = el.dataset.num;
         selectedRgb = el.dataset.rgb;
-        selectedLabel.textContent = `Selected: ${selectedNum}`;
+        selectedLabel.textContent = t('selectedNum', { num: selectedNum });
       }
 
       swatches.addEventListener('click', (e) => {
@@ -683,83 +1262,130 @@
       return svg;
     }
 
-    function wirePainting(svg, paletteSelection, onCorrectPaint) {
-      svg.addEventListener('click', (e) => {
-        const path = e.target.closest('path');
-        if (!path) return;
+    async function fetchPaintingTrivia(title, artist) {
+      // Dummy stand-in for a future real lookup (e.g. SMK's own API, Wikidata,
+      // or an internal enrichment table in pnb-database). Shaped like a
+      // plausible JSON response so swapping in a real fetch() later is a
+      // drop-in change.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return {
+        year: '1889',
+        period: t('triviaDummyPeriod'),
+        style: t('triviaDummyStyle'),
+        medium: t('triviaDummyMedium'),
+        funFact: t('triviaDummyFunFact', {
+          artist: artist || t('triviaDummyArtistFallback'),
+          title: title || t('triviaDummyTitleFallback'),
+        }),
+      };
+    }
 
-        const selectedNum = paletteSelection.getSelectedNum();
-        const selectedRgb = paletteSelection.getSelectedRgb();
-        if (selectedNum == null || selectedRgb == null) return;
+    function renderTriviaPanel(svgWrap, puzzle) {
+      const panel = document.createElement('div');
+      panel.className = 'triviaPanel';
+      panel.id = 'triviaPanel';
 
-        const needed = path.dataset.colorNum;
-        if (needed === selectedNum) {
-          if (path.dataset.painted === '1') return;
-          path.style.fill = selectedRgb;
-          path.dataset.painted = '1';
-          if (typeof onCorrectPaint === 'function') onCorrectPaint(path);
+      const close = document.createElement('div');
+      close.className = 'triviaClose';
+      close.textContent = '×';
+      close.setAttribute('role', 'button');
+      close.setAttribute('aria-label', t('triviaCloseLabel'));
+      close.addEventListener('click', () => panel.classList.remove('show'));
+
+      const title = document.createElement('div');
+      title.className = 'triviaTitle';
+      title.textContent = puzzle.title || t('triviaUntitled');
+
+      const artist = document.createElement('div');
+      artist.className = 'triviaArtist';
+      artist.textContent = puzzle.artist || '';
+
+      const loading = document.createElement('div');
+      loading.className = 'triviaLoading';
+      loading.textContent = t('triviaLoading');
+
+      panel.appendChild(close);
+      panel.appendChild(title);
+      panel.appendChild(artist);
+      panel.appendChild(loading);
+      svgWrap.appendChild(panel);
+
+      requestAnimationFrame(() => panel.classList.add('show'));
+
+      fetchPaintingTrivia(puzzle.title, puzzle.artist).then((trivia) => {
+        loading.remove();
+
+        const grid = document.createElement('dl');
+        grid.className = 'triviaGrid';
+        const rows = [
+          [t('triviaYear'), trivia.year],
+          [t('triviaPeriod'), trivia.period],
+          [t('triviaStyle'), trivia.style],
+          [t('triviaMedium'), trivia.medium],
+        ];
+        for (const [label, value] of rows) {
+          if (!value) continue;
+          const dt = document.createElement('dt');
+          dt.textContent = label;
+          const dd = document.createElement('dd');
+          dd.textContent = value;
+          grid.appendChild(dt);
+          grid.appendChild(dd);
         }
+        panel.appendChild(grid);
+
+        if (trivia.funFact) {
+          const fact = document.createElement('div');
+          fact.className = 'triviaFact';
+          fact.textContent = trivia.funFact;
+          panel.appendChild(fact);
+        }
+      }).catch((err) => {
+        console.error(err);
+        loading.textContent = t('triviaError');
       });
     }
 
-    function revealOriginalInWrap(svgWrap) {
+    function revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle) {
       const img = document.createElement('img');
       img.className = 'finalImage';
-      img.alt = 'Completed painting';
-      img.src = 'paintings/kroyer.png';
+      img.alt = t('finalImageAlt');
+      img.src = referenceImageUrl;
 
       svgWrap.innerHTML = '';
       svgWrap.appendChild(img);
 
       const show = () => {
         // Ensure we have at least one frame with opacity:0 before showing
-        requestAnimationFrame(() => img.classList.add('show'));
+        requestAnimationFrame(() => {
+          img.classList.add('show');
+          checkFitsWithinWrap(img, svgWrap);
+        });
       };
       if (img.complete) show();
       else img.addEventListener('load', show, { once: true });
 
-      // Hide the palette when complete.
+      // Hide the palette and zoom controls when complete.
       const paletteEl = document.querySelector('.palette');
       if (paletteEl) paletteEl.style.display = 'none';
-    }
+      const zoomControlsEl = document.getElementById('zoomControls');
+      if (zoomControlsEl) zoomControlsEl.style.display = 'none';
 
-    function populatePaintingSelect() {
-      const sel = document.getElementById('paintingSelect');
-      sel.innerHTML = '';
-      for (const p of PAINTINGS) {
-        const opt = document.createElement('option');
-        opt.value = p;
-        opt.textContent = p;
-        sel.appendChild(opt);
-      }
-      return sel;
-    }
-
-    function getInitialPainting() {
-      const url = new URL(window.location.href);
-      const p = url.searchParams.get('painting');
-      if (p && PAINTINGS.includes(p)) return p;
-      return PAINTINGS[0];
-    }
-
-    function setUrlPainting(stem) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('painting', stem);
-      window.history.replaceState({}, '', url.toString());
+      renderTriviaPanel(svgWrap, puzzle);
     }
 
     async function main() {
       const loading = document.getElementById('loading');
       const svgWrap = document.getElementById('svgWrap');
 
-      const paintingSelect = populatePaintingSelect();
-      const initial = getInitialPainting();
-      paintingSelect.value = initial;
-      setUrlPainting(initial);
+      loading.textContent = t('loadingPuzzle');
+      // Deliberately not shown until completion (see the trivia panel) —
+      // the painting's title/artist would spoil the guessing game.
+      const puzzle = await fetchActivePuzzle();
 
-      loading.textContent = 'Loading palette…';
-      const palette = PALETTE;
+      const palette = puzzle.palette;
       const counterByNum = buildSwatches(palette);
+      wireSwatchScrollHints(document.getElementById('swatches'));
       const paletteSelection = wirePaletteSelection();
       const cheatBtn = document.getElementById('cheatBtn');
       let cheatFn = null;
@@ -778,21 +1404,129 @@
       }
       wireCheat();
 
-      async function loadAndShow(stem) {
+      // Zoom controls (+/-/reset) — wired once; they call into whichever
+      // panzoom controller is currently active for the loaded puzzle.
+      let panzoomCtl = null;
+      function wireZoomControls() {
+        const inBtn = document.getElementById('zoomInBtn');
+        const outBtn = document.getElementById('zoomOutBtn');
+        const resetBtn = document.getElementById('zoomResetBtn');
+        const bind = (el, fn) => {
+          if (!el) return;
+          el.addEventListener('click', fn);
+          el.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            fn();
+          });
+        };
+        bind(inBtn, () => panzoomCtl && panzoomCtl.stepScale(1.6));
+        bind(outBtn, () => panzoomCtl && panzoomCtl.stepScale(1 / 1.6));
+        bind(resetBtn, () => panzoomCtl && panzoomCtl.reset());
+      }
+      wireZoomControls();
+
+      // Show the pinch-to-zoom hint once per browser, on first load only.
+      function maybeShowZoomHint() {
+        let seen = false;
+        try { seen = localStorage.getItem('pnb_zoom_hint_seen') === '1'; } catch (_e) { /* ignore */ }
+        if (seen) return;
+        const el = document.getElementById('zoomHint');
+        if (!el) return;
+        requestAnimationFrame(() => el.classList.add('show'));
+        setTimeout(() => {
+          el.classList.remove('show');
+          try { localStorage.setItem('pnb_zoom_hint_seen', '1'); } catch (_e) { /* ignore */ }
+        }, 3500);
+      }
+      maybeShowZoomHint();
+
+      // Hints: highlight and zoom to an unpainted region of the selected
+      // color. Limited per puzzle so it stays a nudge, not an autosolve.
+      const HINT_LIMIT = 5;
+      let hintsRemaining = HINT_LIMIT;
+      let hintTargets = { annotated: null };
+      const hintBtn = document.getElementById('hintBtn');
+
+      function updateHintBtnLabel() {
+        if (!hintBtn) return;
+        hintBtn.textContent = hintsRemaining > 0 ? t('hintButtonCount', { count: hintsRemaining }) : t('hintButtonNone');
+        if (hintsRemaining <= 0) hintBtn.setAttribute('disabled', 'true');
+        else hintBtn.removeAttribute('disabled');
+      }
+
+      function pathLocalCenter(svg, path) {
+        const vb = svg.viewBox.baseVal;
+        const bbox = path.getBBox();
+        const cx = bbox.x + bbox.width / 2;
+        const cy = bbox.y + bbox.height / 2;
+        const scaleFactor = Math.min(svg.clientWidth / vb.width, svg.clientHeight / vb.height);
+        const offsetX = (svg.clientWidth - vb.width * scaleFactor) / 2;
+        const offsetY = (svg.clientHeight - vb.height * scaleFactor) / 2;
+        return {
+          lx: offsetX + (cx - vb.x) * scaleFactor,
+          ly: offsetY + (cy - vb.y) * scaleFactor,
+        };
+      }
+
+      function useHint() {
+        if (hintsRemaining <= 0 || !panzoomCtl || !hintTargets.annotated) return;
+        const selectedNum = paletteSelection.getSelectedNum();
+        if (selectedNum == null) {
+          const label = document.getElementById('selectedLabel');
+          if (label) {
+            const prev = label.textContent;
+            label.textContent = t('pickColorFirst');
+            setTimeout(() => { label.textContent = prev; }, 1400);
+          }
+          return;
+        }
+        const candidate = hintTargets.annotated.querySelector(
+          `path[data-color-num="${selectedNum}"][data-painted="0"]`
+        );
+        if (!candidate) return;
+
+        hintsRemaining -= 1;
+        updateHintBtnLabel();
+
+        const { lx, ly } = pathLocalCenter(hintTargets.annotated, candidate);
+        panzoomCtl.focusOnLocalPoint(lx, ly, Math.min(4, MAX_ZOOM));
+        candidate.classList.remove('pnb-hint');
+        void candidate.offsetWidth;
+        candidate.classList.add('pnb-hint');
+        setTimeout(() => candidate.classList.remove('pnb-hint'), 2200);
+      }
+
+      if (hintBtn) {
+        hintBtn.addEventListener('click', useHint);
+        hintBtn.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          useHint();
+        });
+      }
+
+      async function loadAndShow(svgUrl, referenceImageUrl) {
         svgWrap.innerHTML = '';
+        const fitWarningEl = document.getElementById('fitWarning');
+        if (fitWarningEl) fitWarningEl.classList.remove('show');
         const msg = document.createElement('div');
         msg.className = 'loading';
-        msg.textContent = 'Loading painting…';
+        msg.textContent = t('loadingPainting');
         svgWrap.appendChild(msg);
 
         // Ensure palette is visible when starting/restarting a painting.
         const paletteEl = document.querySelector('.palette');
         if (paletteEl) paletteEl.style.display = '';
 
-        const svg = await loadSvg(stem);
+        const svg = await loadSvg(svgUrl);
         const annotated = annotateSvg(svg, palette);
         svgWrap.innerHTML = '';
         svgWrap.appendChild(annotated);
+
+        hintTargets.annotated = annotated;
+        hintsRemaining = HINT_LIMIT;
+        updateHintBtnLabel();
 
         // Completion tracking: count paintable regions once per load.
         const paintable = Array.from(annotated.querySelectorAll('path')).filter(p => p.dataset.colorNum && p.dataset.colorNum !== '-1');
@@ -808,9 +1542,9 @@
         }
         for (const c of palette) {
           paintedByNum.set(c.num, 0);
-          // Re-show swatches (they may have been hidden when completed)
+          // Reset swatches (they may have been marked done on a prior puzzle)
           const sw = document.querySelector(`.swatch[data-num="${c.num}"]`);
-          if (sw) sw.style.display = '';
+          if (sw) sw.classList.remove('done');
           setSwatchCount(counterByNum, c.num, 0, totalByNum.get(c.num) || 0);
         }
 
@@ -821,23 +1555,13 @@
           paintedByNum.set(n, next);
           setSwatchCount(counterByNum, n, next, totalByNum.get(n) || 0);
           if (totalToPaint > 0 && paintedCount >= totalToPaint) {
-            revealOriginalInWrap(svgWrap);
+            revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
           }
         }
 
         // Cheat: paint everything correctly at once (only unpainted regions count)
         cheatFn = () => {
           for (const p of paintable) {
-            // Skip the special facetId
-            const facetId = (
-              p.getAttribute('data-facetId') ||
-              p.getAttribute('data-facetid') ||
-              p.dataset.facetId ||
-              p.dataset.facetid ||
-              ''
-            ).toString();
-            if (facetId === '397') continue;
-
             if (p.dataset.painted === '1') continue;
             const fill = p.dataset.correctFill;
             if (fill) p.style.fill = fill;
@@ -852,23 +1576,26 @@
           // Some browsers need a second frame if fonts/paths settle late.
           requestAnimationFrame(() => {
             fitSvgToWrap(annotated);
-            // Now wire pan/zoom on the fitted SVG
-            wirePanZoom(annotated, svgWrap);
+            // Now wire pan/zoom + tap-to-paint on the fitted SVG
+            panzoomCtl = wireCanvasInteractions(annotated, svgWrap, paletteSelection, onCorrectPaint);
+            checkFitsWithinWrap(annotated, svgWrap);
           });
         });
-        wirePainting(annotated, paletteSelection, onCorrectPaint);
+        window.addEventListener('resize', () => checkFitsWithinWrap(annotated, svgWrap));
       }
 
-      await loadAndShow(initial);
-
-      paintingSelect.addEventListener('change', async () => {
-        const stem = paintingSelect.value;
-        setUrlPainting(stem);
-        await loadAndShow(stem);
-      });
+      await loadAndShow(puzzle.svgUrl, puzzle.referenceImageUrl);
     }
 
-    main().catch((err) => {
+    async function boot() {
+      I18N = await loadTranslations(LANG);
+      document.documentElement.lang = LANG;
+      applyStaticTranslations();
+      wireTopbarHeightSync();
+      await main();
+    }
+
+    boot().catch((err) => {
       console.error(err);
       const svgWrap = document.getElementById('svgWrap');
       svgWrap.innerHTML = '';
@@ -876,8 +1603,8 @@
       msg.className = 'loading';
       const isFile = window.location.protocol === 'file:';
       msg.textContent = isFile
-        ? 'Error: browser blocked loading files. Open this via a web server (http/https), not file://. Example: run “python -m http.server 5173” in this folder, then open http://127.0.0.1:5173/index.html'
-        : `Error: ${err.message || err}`;
+        ? t('errorFileProtocol')
+        : t('errorGeneric', { message: err.message || err });
       svgWrap.appendChild(msg);
     });
   </script>
