@@ -1,2 +1,19 @@
 __pycache__/
 *.pyc
+
+# Node / Capacitor
+node_modules/
+www/
+
+# iOS build outputs (the ios/ Xcode project itself is checked in)
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/.build/
+
+# Android build outputs (the android/ project itself is checked in)
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties

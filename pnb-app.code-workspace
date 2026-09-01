@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../paintbynumbersgenerator-master"
+		},
+		{
+			"path": "../pnb-database"
+		}
+	],
+	"settings": {}
+}
