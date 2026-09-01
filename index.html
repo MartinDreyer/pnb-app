@@ -680,7 +680,7 @@
     async function fetchActivePuzzle() {
       const nowIso = new Date().toISOString();
       const params = new URLSearchParams({
-        select: 'id,active_from,active_until,puzzles(id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist))',
+        select: 'id,active_from,active_until,puzzles(id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number))',
         active_from: `lte.${nowIso}`,
         active_until: `gte.${nowIso}`,
         order: 'active_from.desc',
@@ -703,6 +703,7 @@
         referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
         title: row.puzzles.paintings ? row.puzzles.paintings.title : '',
         artist: row.puzzles.paintings ? row.puzzles.paintings.artist : '',
+        smkObjectNumber: row.puzzles.paintings ? row.puzzles.paintings.smk_object_number : '',
       };
     }
 
@@ -1262,22 +1263,47 @@
       return svg;
     }
 
-    async function fetchPaintingTrivia(title, artist) {
-      // Dummy stand-in for a future real lookup (e.g. SMK's own API, Wikidata,
-      // or an internal enrichment table in pnb-database). Shaped like a
-      // plausible JSON response so swapping in a real fetch() later is a
-      // drop-in change.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return {
-        year: '1889',
-        period: t('triviaDummyPeriod'),
-        style: t('triviaDummyStyle'),
-        medium: t('triviaDummyMedium'),
-        funFact: t('triviaDummyFunFact', {
-          artist: artist || t('triviaDummyArtistFallback'),
-          title: title || t('triviaDummyTitleFallback'),
-        }),
-      };
+    const SMK_API_BASE_URL = 'https://api.smk.dk/api/v1';
+
+    // Real lookup against SMK's own open API (the same source the generator backend
+    // pulls paintings from), keyed by the painting's smk_object_number. SMK doesn't
+    // expose an art-movement/style field or a ready-made "fun fact", so those are
+    // assembled from the fields it does have (object type, technique/materials,
+    // the artist's lifespan, acquisition year).
+    async function fetchPaintingTrivia(objectNumber, title, artist) {
+      if (!objectNumber) throw new Error('No smk_object_number for this painting');
+
+      const params = new URLSearchParams({ object_number: objectNumber, lang: LANG === 'da' ? 'da' : 'en' });
+      const res = await fetch(`${SMK_API_BASE_URL}/art?${params.toString()}`);
+      if (!res.ok) throw new Error(`SMK API HTTP ${res.status}`);
+      const data = await res.json();
+      const item = data.items && data.items[0];
+      if (!item) throw new Error(`No SMK data for ${objectNumber}`);
+
+      const production = (item.production && item.production[0]) || {};
+      const year = (item.production_date && item.production_date[0] && item.production_date[0].period) || '';
+      const style = (item.object_names || []).map((o) => o.name).filter(Boolean).join(', ');
+      const mediumSource = item.techniques && item.techniques.length ? item.techniques : item.materials || [];
+      const medium = mediumSource.filter(Boolean).join(', ');
+
+      let period = '';
+      if (production.creator_date_of_birth && production.creator_date_of_death) {
+        period = t('triviaLifespan', {
+          birth: new Date(production.creator_date_of_birth).getFullYear(),
+          death: new Date(production.creator_date_of_death).getFullYear(),
+        });
+      }
+
+      const artistName = artist || t('triviaArtistFallback');
+      const acquisitionYear = item.acquisition_date ? new Date(item.acquisition_date).getFullYear() : null;
+      let funFact = '';
+      if (medium && acquisitionYear) {
+        funFact = t('triviaFunFactAcquired', { artist: artistName, medium, year: acquisitionYear });
+      } else if (medium) {
+        funFact = t('triviaFunFactMedium', { artist: artistName, medium });
+      }
+
+      return { year, period, style, medium, funFact };
     }
 
     function renderTriviaPanel(svgWrap, puzzle) {
@@ -1312,7 +1338,7 @@
 
       requestAnimationFrame(() => panel.classList.add('show'));
 
-      fetchPaintingTrivia(puzzle.title, puzzle.artist).then((trivia) => {
+      fetchPaintingTrivia(puzzle.smkObjectNumber, puzzle.title, puzzle.artist).then((trivia) => {
         loading.remove();
 
         const grid = document.createElement('dl');
