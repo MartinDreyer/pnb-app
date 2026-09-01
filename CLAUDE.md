@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Keeping the roadmap and TODO current
+
+`ROADMAP.md` and `TODO.md` in this repo root are the canonical, cross-repo tracker for
+this platform (covering `pnb-app`, `pnb-database`, and
+`paintbynumbersgenerator-master/backend`) — `paintbynumbersgenerator-master/CLAUDE.md`
+points back here rather than keeping a second copy. After any work session that ships a
+change (in any of the three repos) or decides on next steps: append a dated bullet under
+`ROADMAP.md`'s "Done", and check off / append to `TODO.md`. Append rather than rewrite —
+add new dated sections and new list items at the end of their section instead of
+reordering or rewording existing ones — so parallel branches touching these files merge
+cleanly instead of conflicting.
+
 ## What this is
 
 A single-page "paint by numbers" web app: an SVG painting is divided into numbered regions; the user picks a palette color number, then taps/clicks matching regions to reveal them. When every region is painted, the app fades in the finished reference image.
