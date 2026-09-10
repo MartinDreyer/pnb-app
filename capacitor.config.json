@@ -1,5 +1,18 @@
 {
   "appId": "dk.pnb.app",
   "appName": "Paint by Numbers",
-  "webDir": "www"
+  "webDir": "www",
+  "backgroundColor": "#FFFFFFFF",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0,
+      "launchAutoHide": false,
+      "backgroundColor": "#FFFFFFFF",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": false,
+      "splashImmersive": false
+    }
+  }
 }
