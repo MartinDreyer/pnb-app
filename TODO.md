@@ -11,11 +11,34 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Generate + publish new puzzles via the control panel to verify the pipeline end-to-end
 - [x] Replace dummy completion-panel trivia with a real SMK API lookup (year/period/style/medium/fun fact)
 
+## Done (2026-09-08)
+
+- [x] Remove the topbar logo image and its unused i18n/CSS
+- [x] Fix top/side safe-area clipping on notch/Dynamic Island devices
+- [x] Set up Xcode + CocoaPods and run the app on a physical iPhone (free Apple ID)
+- [x] Add a home/menu screen with a "Today's puzzle" card and past-weeks history list
+- [x] Persist per-puzzle painting progress locally so navigating away doesn't lose work
+
+## Done (2026-09-10)
+
+- [x] Replace the default Capacitor icon/splash placeholder with a custom app icon and splash screen (iOS + Android assets)
+- [x] Add `@capacitor/splash-screen` and keep the native splash up until the app's own data finishes loading
+
+## Done (2026-09-14)
+
+- [x] Redesign the home menu's history into a horizontal "past weeks" strip + a month-browsable Archive overlay, instead of one flat capped list
+- [x] Add a livelier, more colorful background to the menu/archive screens
+- [x] Add an admin-configurable `generator_config` (cadence in days, enabled toggle, color/facet/region tuning) instead of hardcoded pipeline settings
+- [x] Implement a real "max regions per color" cap in the generator (`FacetReducer.capFacetsPerColor`), verified end-to-end against a live SMK-generated puzzle
+- [x] Make the puzzle-prep cadence configurable (any day interval, not just a fixed daily/weekly split) via the new Settings panel
+- [x] Fix the confusing admin schedule table (ambiguous dates, no past/active/upcoming indication) and add "Paintings" (used/available) and "Prepared but not used" overview tables
+
 ## Next up
 
+- [ ] Refresh Android's `mipmap-*/ic_launcher*.png` launcher icons (still the default Capacitor placeholder)
+- [ ] Enroll in the paid Apple Developer Program so the app can actually be uploaded to TestFlight
 - [ ] Add a completion timer (start on first paint, stop when the puzzle is finished)
 - [ ] Add a mid-fill "guess the painting" option
 - [ ] Build a leaderboard ranking guesses by how early/correct they were
 - [ ] Switch control-panel SMK browsing (search/random candidate lists) to `image_thumbnail` instead of `image_native`; keep `image_native` only for the painting actually chosen for generation
-- [ ] Make the daily puzzle-prep cadence configurable (daily vs. weekly)
 - [ ] Move puzzle-prep scheduling off the Node process's `setInterval` onto a real cron/scheduler, so it runs reliably regardless of whether the control panel server is up

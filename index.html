@@ -15,6 +15,9 @@
       --bg: #FFFFFF;
       --panel: #FFFFFF;
       --panel2: #FFFFFF;
+      /* Distinct from --bg/--panel so the painting card reads as a framed
+         picture against a matte, instead of a white card on white. */
+      --canvas-bg: #EAEDF1;
       --text: #111111;
       --muted: #444444;
       --accent: #6ea8ff;
@@ -43,7 +46,7 @@
       align-items: flex-start;
       justify-content: center;
       gap: 4px;
-      padding: 8px 12px;
+      padding: calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px));
       border-bottom: 1px solid var(--stroke);
       background: #FFFFFF;
       position: fixed;
@@ -70,12 +73,6 @@
       user-select: none;
     }
 
-    .logo {
-      height: 14px; /* match .title font-size */
-      width: auto;
-      display: block;
-    }
-
     select {
       background: #FFFFFF;
       color: var(--text);
@@ -98,7 +95,7 @@
     }
 
     .canvas {
-      background: var(--panel2);
+      background: var(--canvas-bg);
       position: absolute;
       inset: 0;
       padding-top: var(--topbar-h);
@@ -122,7 +119,7 @@
       min-height: 0;
       display: grid;
       place-items: center;
-      padding: 12px;
+      padding: 20px;
       box-sizing: border-box;
     }
 
@@ -134,7 +131,8 @@
       min-height: 0;
       background: white;
       border-radius: 14px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      border: 1px solid var(--stroke);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.22);
       /* We handle pan/zoom ourselves */
       touch-action: none;
       transform-origin: 0 0;
@@ -149,7 +147,8 @@
       object-fit: contain;
       background: white;
       border-radius: 14px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      border: 1px solid var(--stroke);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.22);
       display: block;
       opacity: 0;
       transition: opacity 2250ms ease;
@@ -179,6 +178,15 @@
 
     #pnb-svg path.pnb-wrong {
       animation: pnbWrongTap 170ms ease;
+    }
+
+    @keyframes pnbCorrectFill {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+
+    #pnb-svg path.pnb-correct {
+      animation: pnbCorrectFill 260ms ease-out;
     }
 
     @keyframes pnbHintPulse {
@@ -212,6 +220,25 @@
       align-items: center;
       justify-content: space-between;
       gap: 10px;
+    }
+
+    .selectedGroup {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .selectedChip {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 1px solid rgba(0,0,0,0.2);
+      display: none;
+      flex: none;
+    }
+
+    .selectedChip.show {
+      display: block;
     }
 
     .selected {
@@ -432,7 +459,7 @@
 
     .zoomControls {
       position: fixed;
-      right: 12px;
+      right: calc(12px + env(safe-area-inset-right, 0px));
       bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px) + 14px);
       z-index: 55;
       display: flex;
@@ -460,6 +487,411 @@
 
     .zoomBtn:active {
       transform: translateY(1px);
+    }
+
+    /* Back-to-menu button: reuses .zoomBtn's round look, pinned top-left
+       instead of bottom-right, only shown while a puzzle is open. */
+    .homeBtn {
+      position: fixed;
+      left: calc(12px + env(safe-area-inset-left, 0px));
+      top: calc(8px + env(safe-area-inset-top, 0px));
+      z-index: 56;
+      display: none;
+    }
+
+    .homeBtn.show {
+      display: flex;
+    }
+
+    /* Reserve room in the topbar so its text never sits under the fixed-position
+       back button — both are otherwise anchored to the same left edge. */
+    .topbar.hasBack {
+      padding-left: calc(60px + env(safe-area-inset-left, 0px));
+    }
+
+    .numbersToggleBtn {
+      position: fixed;
+      right: calc(12px + env(safe-area-inset-right, 0px));
+      top: calc(8px + env(safe-area-inset-top, 0px));
+      z-index: 56;
+      display: none;
+    }
+
+    .numbersToggleBtn.show {
+      display: flex;
+    }
+
+    .numbersToggleBtn.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
+    }
+
+    /* Mirrors .topbar.hasBack, reserving room on the right instead. */
+    .topbar.hasNumbersToggle {
+      padding-right: calc(60px + env(safe-area-inset-right, 0px));
+    }
+
+    /* In-app splash: painted over the native launch splash the instant the web
+       view can render anything (plain HTML/CSS, no JS needed), so the handoff
+       from native splash to app content has no gap to flash black/blank in.
+       Sits above absolutely everything, including the menu. */
+    .splashOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      transition: opacity 300ms ease;
+    }
+
+    .splashOverlay.hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .splashMark {
+      position: relative;
+      width: 160px;
+      height: 160px;
+    }
+
+    .splashSwatch {
+      position: absolute;
+      width: 76px;
+      height: 76px;
+      border-radius: 18px;
+      border: 4px solid var(--bg);
+      animation: splashColorCycle 2.4s ease-in-out infinite;
+    }
+
+    .splashSwatch:nth-child(1) { top: 0; left: 0; transform: rotate(-8deg); animation-delay: 0s; }
+    .splashSwatch:nth-child(2) { top: 0; right: 0; transform: rotate(10deg); animation-delay: 0.2s; }
+    .splashSwatch:nth-child(3) { bottom: 0; left: 0; transform: rotate(12deg); animation-delay: 0.4s; }
+    .splashSwatch:nth-child(4) { bottom: 0; right: 0; transform: rotate(-10deg); animation-delay: 0.6s; }
+
+    @keyframes splashColorCycle {
+      0% { background-color: #6ea8ff; }
+      25% { background-color: #d98e5f; }
+      50% { background-color: #8a6a4f; }
+      75% { background-color: #3a3a3a; }
+      100% { background-color: #6ea8ff; }
+    }
+
+    .splashTitle {
+      font-weight: 700;
+      font-size: 20px;
+      color: var(--text);
+    }
+
+    /* Menu screen: today's puzzle + history of past weeks. Sits above every
+       other overlay (.fitWarning is the highest existing z-index at 70). */
+    .menuOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: var(--bg);
+      box-sizing: border-box;
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      overflow-y: auto;
+      display: none;
+    }
+
+    .menuOverlay.show {
+      display: block;
+    }
+
+    /* Soft colorful blobs behind the menu/archive content, instead of flat
+       white — purely decorative (low opacity, non-interactive), so it never
+       competes with the cards on top of it for readability. Scoped to these
+       two overlays only; the painting canvas keeps its matte --canvas-bg for
+       contrast against the artwork.
+       Deliberately no `filter: blur()` here — a full-viewport blur is a real
+       rasterization cost (worse on low-power/mobile GPUs), and this is a
+       reload-based app so every menu<->puzzle navigation repaints it from
+       scratch. The soft edge instead comes from the gradient's own fade-to-
+       transparent stops, which the compositor renders directly with no blur
+       pass. */
+    .menuOverlay::before,
+    .archiveOverlay::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.55), rgba(110,168,255,0) 70%),
+        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.5), rgba(240,180,41,0) 70%),
+        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.5), rgba(95,180,136,0) 70%),
+        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.5), rgba(217,142,95,0) 70%);
+    }
+
+    .menuHeader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 0 0 20px;
+    }
+
+    .menuBrandMark {
+      position: relative;
+      width: 40px;
+      height: 40px;
+      flex: none;
+    }
+
+    .menuBrandSwatch {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 2px solid var(--bg);
+    }
+
+    .menuBrandSwatch:nth-child(1) { top: 0; left: 0; background: #6ea8ff; transform: rotate(-8deg); }
+    .menuBrandSwatch:nth-child(2) { top: 0; right: 0; background: #d98e5f; transform: rotate(10deg); }
+    .menuBrandSwatch:nth-child(3) { bottom: 0; left: 0; background: #8a6a4f; transform: rotate(12deg); }
+    .menuBrandSwatch:nth-child(4) { bottom: 0; right: 0; background: #3a3a3a; transform: rotate(-10deg); }
+
+    .menuTitle {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .menuTodayCard {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 16px;
+      box-sizing: border-box;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+      font: inherit;
+      color: inherit;
+    }
+
+    .menuTodayCard:active {
+      transform: translateY(1px);
+    }
+
+    .menuThumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 10px;
+      object-fit: cover;
+      flex: none;
+      background: var(--stroke);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+    }
+
+    .menuTodayBody {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .menuTodayHeading {
+      font-weight: 650;
+      font-size: 15px;
+      margin-bottom: 2px;
+    }
+
+    .menuStatus {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .menuHistoryTitle {
+      font-size: 14px;
+      font-weight: 650;
+      color: var(--muted);
+      margin: 24px 0 10px;
+    }
+
+    .menuHistoryStrip {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-snap-type: x proximity;
+      padding: 2px 2px 10px;
+      margin: 0 -2px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .menuHistoryItem {
+      flex: none;
+      width: 120px;
+      scroll-snap-align: start;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 10px;
+      box-sizing: border-box;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+      font: inherit;
+      color: inherit;
+    }
+
+    .menuHistoryItem:active {
+      transform: translateY(1px);
+    }
+
+    .menuHistoryItem .menuThumb {
+      width: 100%;
+      height: 84px;
+      border-radius: 10px;
+      font-size: 22px;
+    }
+
+    .menuHistoryDate {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .menuHistoryItem .menuStatus {
+      font-size: 11px;
+    }
+
+    .menuHistoryEmpty {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .menuArchiveBtn {
+      display: block;
+      margin: 4px 0 0;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 10px 18px;
+      font: inherit;
+      font-weight: 650;
+      font-size: 13px;
+      color: inherit;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .menuArchiveBtn:active {
+      transform: translateY(1px);
+    }
+
+    /* Archive overlay: month-by-month browse of older weeks. Same layering
+       approach as .menuOverlay (fixed, above everything but below nothing
+       since it's only ever opened from the menu). */
+    .archiveOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 210;
+      background: var(--bg);
+      box-sizing: border-box;
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      overflow-y: auto;
+      display: none;
+    }
+
+    .archiveOverlay.show {
+      display: block;
+    }
+
+    .archiveHeader {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .archiveTitle {
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0 0 2px;
+    }
+
+    .archiveSubtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .archiveCloseBtn {
+      flex: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      color: inherit;
+      font-size: 15px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .archiveMonthNav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .archiveNavBtn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      color: inherit;
+      font-size: 17px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .archiveNavBtn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .archiveMonthLabel {
+      min-width: 160px;
+      text-align: center;
+      font-weight: 650;
+      font-size: 15px;
+    }
+
+    .archiveGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .archiveGrid .menuHistoryItem {
+      width: 100%;
+    }
+
+    .archiveEmpty {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      padding: 24px 0;
     }
 
     /* Hint button */
@@ -525,10 +957,67 @@
       margin: 0 28px 2px 0;
     }
 
+    .triviaGuess {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 4px 28px 12px 0;
+    }
+
+    .triviaGuessPrompt {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .triviaGuessInput {
+      font: inherit;
+      font-size: 13px;
+      padding: 8px 10px;
+      border: 1px solid var(--stroke);
+      border-radius: 10px;
+      box-sizing: border-box;
+      width: 100%;
+    }
+
+    .triviaRevealBtn {
+      align-self: flex-start;
+      font-size: 13px;
+      font-weight: 650;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      border-radius: 999px;
+      padding: 8px 16px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .triviaRevealBtn:active {
+      transform: translateY(1px);
+    }
+
+    .triviaGuessLine {
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .triviaGuessLine.correct {
+      color: #2a9d8f;
+    }
+
+    .triviaGuessLine.incorrect {
+      color: var(--muted);
+    }
+
     .triviaArtist {
       font-size: 13px;
       color: var(--muted);
       margin-bottom: 10px;
+    }
+
+    .triviaArtist a {
+      color: inherit;
+      text-decoration: underline;
     }
 
     .triviaGrid {
@@ -562,9 +1051,59 @@
 </head>
 <body>
   <div class="app">
+    <div class="splashOverlay" id="splashOverlay">
+      <div class="splashMark">
+        <div class="splashSwatch"></div>
+        <div class="splashSwatch"></div>
+        <div class="splashSwatch"></div>
+        <div class="splashSwatch"></div>
+      </div>
+      <div class="splashTitle" data-i18n="appTitle"></div>
+    </div>
+
+    <div class="menuOverlay" id="menuOverlay">
+      <div class="menuHeader">
+        <div class="menuBrandMark">
+          <div class="menuBrandSwatch"></div>
+          <div class="menuBrandSwatch"></div>
+          <div class="menuBrandSwatch"></div>
+          <div class="menuBrandSwatch"></div>
+        </div>
+        <h1 class="menuTitle" data-i18n="menuTitle"></h1>
+      </div>
+      <button type="button" class="menuTodayCard" id="menuTodayCard">
+        <div class="menuThumb" id="menuTodayThumb">🎨</div>
+        <div class="menuTodayBody">
+          <div class="menuTodayHeading" data-i18n="menuTodayTitle"></div>
+          <div class="menuStatus" id="menuTodayStatus"></div>
+        </div>
+      </button>
+      <h2 class="menuHistoryTitle" data-i18n="menuHistoryTitle"></h2>
+      <div class="menuHistoryStrip" id="menuHistoryStrip"></div>
+      <button type="button" class="menuArchiveBtn" id="menuArchiveBtn" data-i18n="menuArchiveButton"></button>
+    </div>
+
+    <div class="archiveOverlay" id="archiveOverlay">
+      <div class="archiveHeader">
+        <div>
+          <h1 class="archiveTitle" data-i18n="archiveTitle"></h1>
+          <div class="archiveSubtitle" data-i18n="archiveSubtitle"></div>
+        </div>
+        <button type="button" class="archiveCloseBtn" id="archiveCloseBtn" data-i18n-aria="archiveCloseLabel">✕</button>
+      </div>
+      <div class="archiveMonthNav">
+        <button type="button" class="archiveNavBtn" id="archivePrevBtn" data-i18n-aria="archivePrevLabel">‹</button>
+        <div class="archiveMonthLabel" id="archiveMonthLabel"></div>
+        <button type="button" class="archiveNavBtn" id="archiveNextBtn" data-i18n-aria="archiveNextLabel">›</button>
+      </div>
+      <div class="archiveGrid" id="archiveGrid"></div>
+    </div>
+
+    <div class="homeBtn zoomBtn" id="homeBtn" role="button" tabindex="0" data-i18n-aria="backToMenuLabel">←</div>
+    <div class="numbersToggleBtn zoomBtn" id="numbersToggleBtn" role="button" tabindex="0" aria-pressed="false" data-i18n-aria="numbersToggleLabel">🔢</div>
+
     <div class="fitWarning" id="fitWarning" data-i18n="fitWarning"></div>
     <div class="topbar">
-      <img class="logo" src="logo.png" alt="" data-i18n-alt="logoAlt" />
       <!-- Deliberately doesn't show the painting's title/artist — that's
            part of the game: guess what you're painting as you go. The real
            title is revealed in the trivia panel on completion instead. -->
@@ -590,7 +1129,10 @@
 
     <div class="palette">
       <div class="paletteHeader">
-        <div class="selected" id="selectedLabel" data-i18n="selectedNone"></div>
+        <div class="selectedGroup">
+          <div class="selectedChip" id="selectedChip"></div>
+          <div class="selected" id="selectedLabel" data-i18n="selectedNone"></div>
+        </div>
         <div class="hintBtn" id="hintBtn" role="button" tabindex="0" data-i18n-aria="hintButtonLabel"></div>
       </div>
       <div class="swatchesWrap">
@@ -674,37 +1216,165 @@
       return `${SUPABASE_URL}/storage/v1/object/public/puzzles/${path}`;
     }
 
+    function supabaseHeaders() {
+      return {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      };
+    }
+
+    async function supabaseSelect(table, params) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${new URLSearchParams(params).toString()}`, {
+        headers: supabaseHeaders(),
+      });
+      if (!res.ok) throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
+      return res.json();
+    }
+
+    function mapPuzzleRow(puzzlesRow) {
+      return {
+        puzzleId: puzzlesRow.id,
+        palette: puzzlesRow.palette, // [{num, rgb: [r,g,b]}, ...] — same shape the UI already expects
+        svgUrl: storagePublicUrl(puzzlesRow.svg_storage_path),
+        referenceImageUrl: storagePublicUrl(puzzlesRow.reference_png_storage_path),
+        title: puzzlesRow.paintings ? puzzlesRow.paintings.title : '',
+        artist: puzzlesRow.paintings ? puzzlesRow.paintings.artist : '',
+        smkObjectNumber: puzzlesRow.paintings ? puzzlesRow.paintings.smk_object_number : '',
+      };
+    }
+
+    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number)';
+
     // The "current puzzle" is whichever rotation_schedule row's active_from/active_until
     // window contains right now (see pnb-database's schema docs). RLS on the anon key
     // only ever exposes published puzzles.
     async function fetchActivePuzzle() {
       const nowIso = new Date().toISOString();
-      const params = new URLSearchParams({
-        select: 'id,active_from,active_until,puzzles(id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number))',
+      const rows = await supabaseSelect('rotation_schedule', {
+        select: `id,active_from,active_until,puzzles(${PUZZLE_FIELDS})`,
         active_from: `lte.${nowIso}`,
         active_until: `gte.${nowIso}`,
         order: 'active_from.desc',
         limit: '1',
       });
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/rotation_schedule?${params.toString()}`, {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-      });
-      if (!res.ok) throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
-      const rows = await res.json();
       if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
-      const row = rows[0];
-      return {
+      return mapPuzzleRow(rows[0].puzzles);
+    }
+
+    async function fetchPuzzleById(puzzleId) {
+      const rows = await supabaseSelect('puzzles', {
+        select: PUZZLE_FIELDS,
+        id: `eq.${puzzleId}`,
+        limit: '1',
+      });
+      if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
+      return mapPuzzleRow(rows[0]);
+    }
+
+    // Past weeks, newest first. Deliberately doesn't select the painting's
+    // title/artist: history rows are labeled by date only, so browsing the list
+    // itself doesn't spoil a puzzle before it's opened.
+    async function fetchPuzzleHistory(limit) {
+      const nowIso = new Date().toISOString();
+      const rows = await supabaseSelect('rotation_schedule', {
+        select: 'id,active_from,active_until,puzzles(id,reference_png_storage_path)',
+        active_until: `lte.${nowIso}`,
+        order: 'active_from.desc',
+        limit: String(limit),
+      });
+      return rows.map((row) => ({
         puzzleId: row.puzzles.id,
-        palette: row.puzzles.palette, // [{num, rgb: [r,g,b]}, ...] — same shape the UI already expects
-        svgUrl: storagePublicUrl(row.puzzles.svg_storage_path),
+        activeFrom: row.active_from,
         referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
-        title: row.puzzles.paintings ? row.puzzles.paintings.title : '',
-        artist: row.puzzles.paintings ? row.puzzles.paintings.artist : '',
-        smkObjectNumber: row.puzzles.paintings ? row.puzzles.paintings.smk_object_number : '',
-      };
+      }));
+    }
+
+    // The short strip on the menu only needs a handful of recent weeks.
+    function fetchRecentPuzzleHistory() {
+      return fetchPuzzleHistory(8);
+    }
+
+    // The full archive, for the month-browsable view — a generous cap (10
+    // years of weekly puzzles) rather than true pagination, since at that
+    // scale fetching it all once and grouping client-side by month is simpler
+    // than paginating server-side per month.
+    function fetchPuzzleArchive() {
+      return fetchPuzzleHistory(520);
+    }
+
+    // Per-puzzle painting progress, kept client-side only (no user accounts).
+    // { [puzzleId]: { painted: number[], completed: boolean } } — `painted`
+    // holds indices into the puzzle's `paintable` array (see loadAndShow),
+    // stable because a given puzzleId's SVG never changes.
+    function loadProgressStore() {
+      try {
+        return JSON.parse(localStorage.getItem('pnb_progress_v1')) || {};
+      } catch (_e) {
+        return {};
+      }
+    }
+
+    function saveProgressStore(store) {
+      try {
+        localStorage.setItem('pnb_progress_v1', JSON.stringify(store));
+      } catch (_e) { /* ignore (e.g. private browsing) */ }
+    }
+
+    function getPuzzleProgress(puzzleId) {
+      const store = loadProgressStore();
+      return store[puzzleId] || { painted: [], completed: false };
+    }
+
+    function markPathPainted(puzzleId, index) {
+      const store = loadProgressStore();
+      const entry = store[puzzleId] || { painted: [], completed: false };
+      if (!entry.painted.includes(index)) entry.painted.push(index);
+      store[puzzleId] = entry;
+      saveProgressStore(store);
+    }
+
+    function markPuzzleCompleted(puzzleId) {
+      const store = loadProgressStore();
+      const entry = store[puzzleId] || { painted: [], completed: false };
+      entry.completed = true;
+      store[puzzleId] = entry;
+      saveProgressStore(store);
+    }
+
+    // Whether to hide the number label on regions that are already painted —
+    // a display preference, not per-puzzle progress, so it's a single flag
+    // rather than something keyed by puzzleId like the progress store above.
+    function loadHideNumbersPref() {
+      try { return localStorage.getItem('pnb_hide_painted_numbers') === '1'; } catch (_e) { return false; }
+    }
+
+    function saveHideNumbersPref(value) {
+      try { localStorage.setItem('pnb_hide_painted_numbers', value ? '1' : '0'); } catch (_e) { /* ignore */ }
+    }
+
+    let hideNumbersEnabled = loadHideNumbersPref();
+    // The currently loaded puzzle's paintable paths, so the global toggle button
+    // (wired once, outside loadAndShow's per-puzzle closure) can re-apply the
+    // preference to whichever puzzle happens to be open.
+    let currentPaintable = [];
+
+    // The generator's SVGs draw each region's number as a `<g class="label">`
+    // immediately following its `<path>` sibling (confirmed in paintings/paintbynumbers.svg,
+    // which CLAUDE.md documents as structured the same way the generator backend emits) —
+    // there's no id/data-attribute link between the two, just this DOM adjacency.
+    function getPathLabel(path) {
+      const next = path.nextElementSibling;
+      return next && next.classList.contains('label') ? next : null;
+    }
+
+    function updateNumberVisibility(path) {
+      const label = getPathLabel(path);
+      if (!label) return;
+      label.style.display = (hideNumbersEnabled && path.dataset.painted === '1') ? 'none' : '';
+    }
+
+    function refreshAllNumberVisibility() {
+      for (const p of currentPaintable) updateNumberVisibility(p);
     }
 
     function cssRgb(rgb) {
@@ -828,6 +1498,36 @@
 
       const TAP_MOVE_THRESHOLD = 14; // px
       const TAP_MAX_DURATION = 350; // ms
+      const TAP_TOLERANCE_RINGS = [0, 8, 14, 22]; // screen px — expanding search radius for a near-miss tap
+      const TAP_TOLERANCE_DIRECTIONS = 8;
+
+      // A tap rarely lands on the exact pixel the user meant, and a number
+      // label's own hit area can sit exactly on top of the region it labels
+      // (elementFromPoint returns whichever the browser deems "on top" there,
+      // which can be the text node, not the path under it). So rather than a
+      // single exact-point hit test, sample a small expanding ring of nearby
+      // points and prefer whichever path matches the selected color — this is
+      // what makes a near-miss tap still paint the intended region instead of
+      // requiring the user to hunt for the exact spot.
+      function findTappablePath(x, y, selectedNum) {
+        let fallback = null;
+        for (const radius of TAP_TOLERANCE_RINGS) {
+          const points = radius === 0
+            ? [[x, y]]
+            : Array.from({ length: TAP_TOLERANCE_DIRECTIONS }, (_, i) => {
+                const angle = (i / TAP_TOLERANCE_DIRECTIONS) * Math.PI * 2;
+                return [x + Math.cos(angle) * radius, y + Math.sin(angle) * radius];
+              });
+          for (const [px, py] of points) {
+            const stack = document.elementsFromPoint(px, py);
+            const path = stack.find((el) => el.tagName === 'path');
+            if (!path) continue;
+            if (selectedNum != null && path.dataset.colorNum === selectedNum) return path;
+            if (!fallback) fallback = path;
+          }
+        }
+        return fallback;
+      }
 
       function attemptPaint(path) {
         if (!path) return;
@@ -848,6 +1548,10 @@
         if (path.dataset.painted === '1') return;
         path.style.fill = selectedRgb;
         path.dataset.painted = '1';
+        // Only on a real live tap — cheat-fill and progress-restoration also
+        // paint via onCorrectPaint, but animating dozens of regions at once
+        // for those would be noisy rather than a satisfying per-tap reaction.
+        path.classList.add('pnb-correct');
         if (typeof onCorrectPaint === 'function') onCorrectPaint(path);
       }
 
@@ -1012,8 +1716,7 @@
         if (Date.now() - state.tapStartTime > TAP_MAX_DURATION) return;
         // A clean, un-moved, quick single-finger touch: paint immediately
         // instead of waiting on a synthetic click event.
-        const el = document.elementFromPoint(state.tapStartX, state.tapStartY);
-        const path = el ? el.closest('path') : null;
+        const path = findTappablePath(state.tapStartX, state.tapStartY, paletteSelection.getSelectedNum());
         if (path) attemptPaint(path);
         state.suppressClickUntil = Date.now() + 600;
       }, { passive: true });
@@ -1025,7 +1728,7 @@
       // handled the paint, so a delayed synthetic click doesn't double-fire.
       svg.addEventListener('click', (e) => {
         if (Date.now() < state.suppressClickUntil) return;
-        const path = e.target.closest('path');
+        const path = findTappablePath(e.clientX, e.clientY, paletteSelection.getSelectedNum());
         if (path) attemptPaint(path);
       });
 
@@ -1205,6 +1908,7 @@
       let selectedRgb = null;
 
       const selectedLabel = document.getElementById('selectedLabel');
+      const selectedChip = document.getElementById('selectedChip');
       const swatches = document.getElementById('swatches');
 
       function setSelected(el) {
@@ -1213,6 +1917,11 @@
         selectedNum = el.dataset.num;
         selectedRgb = el.dataset.rgb;
         selectedLabel.textContent = t('selectedNum', { num: selectedNum });
+        selectedChip.style.background = selectedRgb;
+        selectedChip.classList.add('show');
+        // Bring the chosen swatch into view — with many colors in the row,
+        // the active one can otherwise end up scrolled off to either side.
+        el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       }
 
       swatches.addEventListener('click', (e) => {
@@ -1265,11 +1974,28 @@
 
     const SMK_API_BASE_URL = 'https://api.smk.dk/api/v1';
 
+    // SMK's /art items carry an `enrichment_url` (https://enrichment.api.smk.dk/api/enrichment/{object_number})
+    // pointing at a separate service with per-object computed data: MS Computer Vision
+    // tags, Wikidata links, color extraction, etc. Not every object has every type, and
+    // some objects have only empty stub records, so every lookup below is optional.
+    async function fetchEnrichment(enrichmentUrl) {
+      try {
+        const res = await fetch(enrichmentUrl);
+        if (!res.ok) return null;
+        const records = await res.json();
+        return Array.isArray(records) ? records : null;
+      } catch (err) {
+        console.error('SMK enrichment fetch failed', err);
+        return null;
+      }
+    }
+
     // Real lookup against SMK's own open API (the same source the generator backend
     // pulls paintings from), keyed by the painting's smk_object_number. SMK doesn't
     // expose an art-movement/style field or a ready-made "fun fact", so those are
     // assembled from the fields it does have (object type, technique/materials,
-    // the artist's lifespan, acquisition year).
+    // the artist's lifespan, acquisition year), enriched with the enrichment API's
+    // Wikidata link and computer-vision tags where available.
     async function fetchPaintingTrivia(objectNumber, title, artist) {
       if (!objectNumber) throw new Error('No smk_object_number for this painting');
 
@@ -1294,16 +2020,43 @@
         });
       }
 
+      const langSuffix = LANG === 'da' ? 'da' : 'en';
+      let tags = [];
+      let wikidataUrl = '';
+      if (item.enrichment_url) {
+        const enrichment = await fetchEnrichment(item.enrichment_url);
+        if (enrichment) {
+          const vision = enrichment.find((rec) => rec.type === 'msvisioncomponent');
+          if (vision && vision.data) {
+            tags = (vision.data[`tags_${langSuffix}`] || []).slice(0, 6);
+          }
+          const wikidata = enrichment.find((rec) => rec.type === 'wikidata');
+          if (wikidata && wikidata.data) {
+            wikidataUrl = wikidata.data[`wikidata_link_${langSuffix}_s`] || wikidata.data.wikidata_link_neutral_s || '';
+          }
+        }
+      }
+
       const artistName = artist || t('triviaArtistFallback');
       const acquisitionYear = item.acquisition_date ? new Date(item.acquisition_date).getFullYear() : null;
       let funFact = '';
-      if (medium && acquisitionYear) {
+      if (tags.length) {
+        funFact = t('triviaFunFactTags', { tags: tags.join(', ') });
+      } else if (medium && acquisitionYear) {
         funFact = t('triviaFunFactAcquired', { artist: artistName, medium, year: acquisitionYear });
       } else if (medium) {
         funFact = t('triviaFunFactMedium', { artist: artistName, medium });
       }
 
-      return { year, period, style, medium, funFact };
+      return { year, period, style, medium, funFact, wikidataUrl };
+    }
+
+    // Compares a guess to the real answer leniently (trimmed, case/diacritic
+    // insensitive) — good enough for a fun self-check, not meant to catch typos.
+    function guessMatches(guess, answer) {
+      if (!guess || !answer) return false;
+      const normalize = (s) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      return normalize(guess) === normalize(answer);
     }
 
     function renderTriviaPanel(svgWrap, puzzle) {
@@ -1320,11 +2073,9 @@
 
       const title = document.createElement('div');
       title.className = 'triviaTitle';
-      title.textContent = puzzle.title || t('triviaUntitled');
 
       const artist = document.createElement('div');
       artist.className = 'triviaArtist';
-      artist.textContent = puzzle.artist || '';
 
       const loading = document.createElement('div');
       loading.className = 'triviaLoading';
@@ -1333,13 +2084,26 @@
       panel.appendChild(close);
       panel.appendChild(title);
       panel.appendChild(artist);
-      panel.appendChild(loading);
-      svgWrap.appendChild(panel);
 
-      requestAnimationFrame(() => panel.classList.add('show'));
+      // Guess-before-you-peek: title/artist and the trivia details below both
+      // stay hidden until the user reveals them (with or without guessing
+      // first), so a fast trivia-API response can't spoil the answer early.
+      let revealed = false;
+      let pendingTrivia = null;
+      let pendingError = false;
 
-      fetchPaintingTrivia(puzzle.smkObjectNumber, puzzle.title, puzzle.artist).then((trivia) => {
+      function renderTriviaDetails(trivia) {
         loading.remove();
+
+        if (trivia.wikidataUrl && puzzle.artist) {
+          artist.textContent = '';
+          const link = document.createElement('a');
+          link.href = trivia.wikidataUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = puzzle.artist;
+          artist.appendChild(link);
+        }
 
         const grid = document.createElement('dl');
         grid.className = 'triviaGrid';
@@ -1366,9 +2130,85 @@
           fact.textContent = trivia.funFact;
           panel.appendChild(fact);
         }
+      }
+
+      function guessLine(guess, answer) {
+        const line = document.createElement('div');
+        const correct = guessMatches(guess, answer);
+        line.className = `triviaGuessLine ${correct ? 'correct' : 'incorrect'}`;
+        line.textContent = `${t('triviaYourGuess', { guess })} — ${t(correct ? 'triviaGuessCorrect' : 'triviaGuessIncorrect')}`;
+        return line;
+      }
+
+      function reveal(titleGuess, artistGuess) {
+        if (revealed) return;
+        revealed = true;
+        guessForm.remove();
+
+        title.textContent = puzzle.title || t('triviaUntitled');
+        if (titleGuess) title.appendChild(guessLine(titleGuess, puzzle.title));
+
+        artist.textContent = puzzle.artist || '';
+        if (artistGuess) artist.appendChild(guessLine(artistGuess, puzzle.artist));
+
+        panel.appendChild(loading);
+        if (pendingTrivia) {
+          renderTriviaDetails(pendingTrivia);
+        } else if (pendingError) {
+          loading.textContent = t('triviaError');
+        }
+      }
+
+      const guessForm = document.createElement('div');
+      guessForm.className = 'triviaGuess';
+
+      const prompt = document.createElement('div');
+      prompt.className = 'triviaGuessPrompt';
+      prompt.textContent = t('triviaGuessPrompt');
+
+      const titleInput = document.createElement('input');
+      titleInput.className = 'triviaGuessInput';
+      titleInput.type = 'text';
+      titleInput.placeholder = t('triviaGuessTitlePlaceholder');
+
+      const artistInput = document.createElement('input');
+      artistInput.className = 'triviaGuessInput';
+      artistInput.type = 'text';
+      artistInput.placeholder = t('triviaGuessArtistPlaceholder');
+
+      const revealBtn = document.createElement('button');
+      revealBtn.type = 'button';
+      revealBtn.className = 'triviaRevealBtn';
+      revealBtn.textContent = t('triviaRevealButton');
+      const doReveal = () => reveal(titleInput.value, artistInput.value);
+      revealBtn.addEventListener('click', doReveal);
+      const revealOnEnter = (e) => { if (e.key === 'Enter') doReveal(); };
+      titleInput.addEventListener('keydown', revealOnEnter);
+      artistInput.addEventListener('keydown', revealOnEnter);
+
+      guessForm.appendChild(prompt);
+      guessForm.appendChild(titleInput);
+      guessForm.appendChild(artistInput);
+      guessForm.appendChild(revealBtn);
+      panel.appendChild(guessForm);
+
+      svgWrap.appendChild(panel);
+
+      requestAnimationFrame(() => panel.classList.add('show'));
+
+      fetchPaintingTrivia(puzzle.smkObjectNumber, puzzle.title, puzzle.artist).then((trivia) => {
+        if (revealed) {
+          renderTriviaDetails(trivia);
+        } else {
+          pendingTrivia = trivia;
+        }
       }).catch((err) => {
         console.error(err);
-        loading.textContent = t('triviaError');
+        if (revealed) {
+          loading.textContent = t('triviaError');
+        } else {
+          pendingError = true;
+        }
       });
     }
 
@@ -1400,14 +2240,15 @@
       renderTriviaPanel(svgWrap, puzzle);
     }
 
-    async function main() {
+    // `puzzle` is resolved by boot() before calling in — either today's active
+    // puzzle or a specific past week the user picked from the menu.
+    async function main(puzzle) {
       const loading = document.getElementById('loading');
       const svgWrap = document.getElementById('svgWrap');
 
       loading.textContent = t('loadingPuzzle');
       // Deliberately not shown until completion (see the trivia panel) —
       // the painting's title/artist would spoil the guessing game.
-      const puzzle = await fetchActivePuzzle();
 
       const palette = puzzle.palette;
       const counterByNum = buildSwatches(palette);
@@ -1562,10 +2403,12 @@
         // Per-color tracking for the palette UI.
         const totalByNum = new Map();
         const paintedByNum = new Map();
-        for (const p of paintable) {
+        paintable.forEach((p, i) => {
+          p.dataset.pnbIndex = String(i);
           const n = Number(p.dataset.colorNum);
           totalByNum.set(n, (totalByNum.get(n) || 0) + 1);
-        }
+        });
+        currentPaintable = paintable;
         for (const c of palette) {
           paintedByNum.set(c.num, 0);
           // Reset swatches (they may have been marked done on a prior puzzle)
@@ -1580,9 +2423,24 @@
           const next = (paintedByNum.get(n) || 0) + 1;
           paintedByNum.set(n, next);
           setSwatchCount(counterByNum, n, next, totalByNum.get(n) || 0);
+          updateNumberVisibility(_path);
+          markPathPainted(puzzle.puzzleId, Number(_path.dataset.pnbIndex));
           if (totalToPaint > 0 && paintedCount >= totalToPaint) {
+            markPuzzleCompleted(puzzle.puzzleId);
             revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
           }
+        }
+
+        // Restore any previously painted regions for this puzzle (e.g. the
+        // user left for the menu, or is reopening a finished puzzle).
+        const savedProgress = getPuzzleProgress(puzzle.puzzleId);
+        for (const index of savedProgress.painted) {
+          const p = paintable[index];
+          if (!p || p.dataset.painted === '1') continue;
+          const fill = p.dataset.correctFill;
+          if (fill) p.style.fill = fill;
+          p.dataset.painted = '1';
+          onCorrectPaint(p);
         }
 
         // Cheat: paint everything correctly at once (only unpainted regions count)
@@ -1613,12 +2471,304 @@
       await loadAndShow(puzzle.svgUrl, puzzle.referenceImageUrl);
     }
 
+    // Navigation is reload-based: main()'s setup (buildSwatches, wireZoomControls,
+    // etc.) assumes it runs exactly once per page life, so switching puzzles goes
+    // through a fresh `boot()` rather than trying to safely re-run that setup in-page.
+    function parsePuzzleHash(hash) {
+      const m = /^#puzzle=(.+)$/.exec(hash || '');
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+
+    function goToPuzzle(idOrToday) {
+      location.hash = `puzzle=${encodeURIComponent(idOrToday)}`;
+      location.reload();
+    }
+
+    function backToMenu() {
+      location.hash = '';
+      location.reload();
+    }
+
+    function formatWeekDate(iso) {
+      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
+      return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
+    }
+
+    function menuStatusLabel(progress) {
+      if (progress.completed) return t('menuStatusCompleted');
+      if (progress.painted.length > 0) return t('menuStatusInProgress');
+      return t('menuStatusNotStarted');
+    }
+
+    function setMenuThumb(thumbEl, referenceImageUrl, completed) {
+      if (completed) {
+        thumbEl.textContent = '';
+        thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
+        thumbEl.style.backgroundSize = 'cover';
+        thumbEl.style.backgroundPosition = 'center';
+      } else {
+        thumbEl.textContent = '🎨';
+        thumbEl.style.backgroundImage = 'none';
+      }
+    }
+
+    // Shared by the menu's horizontal strip and the archive grid — a button
+    // card for one past week's puzzle.
+    function buildHistoryCard(row) {
+      const progress = getPuzzleProgress(row.puzzleId);
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'menuHistoryItem';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'menuThumb';
+      setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
+
+      const date = document.createElement('div');
+      date.className = 'menuHistoryDate';
+      date.textContent = t('menuWeekOf', { date: formatWeekDate(row.activeFrom) });
+      const status = document.createElement('div');
+      status.className = 'menuStatus';
+      status.textContent = menuStatusLabel(progress);
+
+      item.appendChild(thumb);
+      item.appendChild(date);
+      item.appendChild(status);
+      item.addEventListener('click', () => goToPuzzle(row.puzzleId));
+      return item;
+    }
+
+    async function renderMenu() {
+      document.getElementById('menuOverlay').classList.add('show');
+
+      const todayStatusEl = document.getElementById('menuTodayStatus');
+      const historyStripEl0 = document.getElementById('menuHistoryStrip');
+      todayStatusEl.textContent = t('loading');
+      historyStripEl0.innerHTML = '';
+
+      const [todayResult, historyResult] = await Promise.allSettled([fetchActivePuzzle(), fetchRecentPuzzleHistory()]);
+
+      const todayCard = document.getElementById('menuTodayCard');
+      const todayThumb = document.getElementById('menuTodayThumb');
+      const todayStatus = document.getElementById('menuTodayStatus');
+      if (todayResult.status === 'fulfilled') {
+        const progress = getPuzzleProgress(todayResult.value.puzzleId);
+        todayStatus.textContent = menuStatusLabel(progress);
+        setMenuThumb(todayThumb, todayResult.value.referenceImageUrl, progress.completed);
+        todayCard.addEventListener('click', () => goToPuzzle('today'));
+      } else {
+        console.error(todayResult.reason);
+        todayStatus.textContent = t('errorNoActivePuzzle');
+        todayCard.disabled = true;
+      }
+
+      const historyStripEl = document.getElementById('menuHistoryStrip');
+      historyStripEl.innerHTML = '';
+      const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
+      if (historyResult.status === 'rejected') console.error(historyResult.reason);
+      if (!historyRows.length) {
+        const empty = document.createElement('div');
+        empty.className = 'menuHistoryEmpty';
+        empty.textContent = t('menuHistoryEmpty');
+        historyStripEl.appendChild(empty);
+      } else {
+        for (const row of historyRows) {
+          historyStripEl.appendChild(buildHistoryCard(row));
+        }
+      }
+
+      wireArchive();
+    }
+
+    // Archive state: fetched once (lazily, on first open) and grouped by
+    // "YYYY-MM" (in the puzzle's own local time zone) so month navigation is
+    // just filtering an already-fetched array, no repeat network round trips.
+    let archiveRowsByMonth = null;
+    let archiveMonthKeys = [];
+    let archiveMonthIndex = 0;
+
+    function monthKey(iso) {
+      const d = new Date(iso);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function monthLabel(key) {
+      const [year, month] = key.split('-').map(Number);
+      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
+      return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
+    }
+
+    async function loadArchiveData() {
+      if (archiveRowsByMonth) return;
+      const rows = await fetchPuzzleArchive();
+      archiveRowsByMonth = new Map();
+      for (const row of rows) {
+        const key = monthKey(row.activeFrom);
+        if (!archiveRowsByMonth.has(key)) archiveRowsByMonth.set(key, []);
+        archiveRowsByMonth.get(key).push(row);
+      }
+      // Oldest first, so "next" moves forward in time.
+      archiveMonthKeys = Array.from(archiveRowsByMonth.keys()).sort();
+      archiveMonthIndex = archiveMonthKeys.length - 1;
+    }
+
+    function renderArchiveMonth() {
+      const grid = document.getElementById('archiveGrid');
+      const label = document.getElementById('archiveMonthLabel');
+      const prevBtn = document.getElementById('archivePrevBtn');
+      const nextBtn = document.getElementById('archiveNextBtn');
+      grid.innerHTML = '';
+
+      if (!archiveMonthKeys.length) {
+        label.textContent = '';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        const empty = document.createElement('div');
+        empty.className = 'archiveEmpty';
+        empty.textContent = t('archiveEmpty');
+        grid.appendChild(empty);
+        return;
+      }
+
+      const key = archiveMonthKeys[archiveMonthIndex];
+      label.textContent = monthLabel(key);
+      prevBtn.disabled = archiveMonthIndex <= 0;
+      nextBtn.disabled = archiveMonthIndex >= archiveMonthKeys.length - 1;
+
+      const rows = archiveRowsByMonth.get(key) || [];
+      for (const row of rows) {
+        grid.appendChild(buildHistoryCard(row));
+      }
+    }
+
+    async function openArchive() {
+      document.getElementById('archiveOverlay').classList.add('show');
+      const label = document.getElementById('archiveMonthLabel');
+      label.textContent = t('loading');
+      await loadArchiveData();
+      renderArchiveMonth();
+    }
+
+    function closeArchive() {
+      document.getElementById('archiveOverlay').classList.remove('show');
+    }
+
+    function wireArchive() {
+      const openBtn = document.getElementById('menuArchiveBtn');
+      openBtn.addEventListener('click', openArchive);
+      document.getElementById('archiveCloseBtn').addEventListener('click', closeArchive);
+      document.getElementById('archivePrevBtn').addEventListener('click', () => {
+        if (archiveMonthIndex > 0) { archiveMonthIndex -= 1; renderArchiveMonth(); }
+      });
+      document.getElementById('archiveNextBtn').addEventListener('click', () => {
+        if (archiveMonthIndex < archiveMonthKeys.length - 1) { archiveMonthIndex += 1; renderArchiveMonth(); }
+      });
+    }
+
+    function wireHomeButton() {
+      const btn = document.getElementById('homeBtn');
+      btn.classList.add('show');
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.classList.add('hasBack');
+      btn.addEventListener('click', backToMenu);
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        backToMenu();
+      });
+    }
+
+    function wireNumbersToggle() {
+      const btn = document.getElementById('numbersToggleBtn');
+      btn.classList.add('show');
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.classList.add('hasNumbersToggle');
+
+      const applyState = () => {
+        btn.classList.toggle('active', hideNumbersEnabled);
+        btn.setAttribute('aria-pressed', String(hideNumbersEnabled));
+      };
+      applyState();
+
+      const activate = () => {
+        hideNumbersEnabled = !hideNumbersEnabled;
+        saveHideNumbersPref(hideNumbersEnabled);
+        applyState();
+        refreshAllNumberVisibility();
+      };
+      btn.addEventListener('click', activate);
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        activate();
+      });
+    }
+
+    // On native (iOS/Android), Capacitor shows a static launch splash from native
+    // code before any web content loads. `#splashOverlay` is plain HTML/CSS (no JS
+    // needed to paint it, and it keeps animating via CSS alone), so the instant the
+    // web view can render anything, it already matches — hide the native splash
+    // right away rather than waiting on the network, closing the gap that used to
+    // flash black/blank between native splash and app content.
+    function hideNativeSplash() {
+      const splashScreen = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen;
+      if (splashScreen) splashScreen.hide();
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    // Matches the .splashSwatch CSS: the last swatch starts its 2.4s color-cycle
+    // after a 0.6s stagger delay, so 3000ms is when every swatch has completed
+    // one full cycle. Keep this in sync if those CSS values change.
+    const SPLASH_ANIMATION_MS = 3000;
+
+    function hideWebSplash() {
+      const el = document.getElementById('splashOverlay');
+      if (!el) return;
+      el.classList.add('hide');
+      setTimeout(() => { el.style.display = 'none'; }, 300);
+    }
+
     async function boot() {
-      I18N = await loadTranslations(LANG);
-      document.documentElement.lang = LANG;
-      applyStaticTranslations();
-      wireTopbarHeightSync();
-      await main();
+      hideNativeSplash();
+
+      // The animated splash is a first-impression/branding moment, not a generic
+      // "please wait" spinner — it should only play once per app session (native
+      // cold start), not replay in full on every in-app menu<->puzzle navigation
+      // (which is reload-based, see goToPuzzle/backToMenu). sessionStorage survives
+      // those reloads (same WebView instance) but resets on a real app relaunch.
+      const isFirstBoot = !sessionStorage.getItem('pnb_booted');
+      try { sessionStorage.setItem('pnb_booted', '1'); } catch (_e) { /* ignore */ }
+      if (!isFirstBoot) {
+        const splashEl = document.getElementById('splashOverlay');
+        if (splashEl) splashEl.style.display = 'none';
+      }
+
+      const bootStarted = Date.now();
+      try {
+        I18N = await loadTranslations(LANG);
+        document.documentElement.lang = LANG;
+        applyStaticTranslations();
+        wireTopbarHeightSync();
+
+        const requested = parsePuzzleHash(location.hash);
+        if (requested === null) {
+          await renderMenu();
+          return;
+        }
+        wireHomeButton();
+        wireNumbersToggle();
+        const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
+        await main(puzzle);
+      } finally {
+        if (isFirstBoot) {
+          const remaining = SPLASH_ANIMATION_MS - (Date.now() - bootStarted);
+          if (remaining > 0) await sleep(remaining);
+          hideWebSplash();
+        }
+      }
     }
 
     boot().catch((err) => {
