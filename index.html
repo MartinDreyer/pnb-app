@@ -604,6 +604,31 @@
       display: block;
     }
 
+    /* Soft colorful blobs behind the menu/archive content, instead of flat
+       white — purely decorative (low opacity, non-interactive), so it never
+       competes with the cards on top of it for readability. Scoped to these
+       two overlays only; the painting canvas keeps its matte --canvas-bg for
+       contrast against the artwork.
+       Deliberately no `filter: blur()` here — a full-viewport blur is a real
+       rasterization cost (worse on low-power/mobile GPUs), and this is a
+       reload-based app so every menu<->puzzle navigation repaints it from
+       scratch. The soft edge instead comes from the gradient's own fade-to-
+       transparent stops, which the compositor renders directly with no blur
+       pass. */
+    .menuOverlay::before,
+    .archiveOverlay::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.55), rgba(110,168,255,0) 70%),
+        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.5), rgba(240,180,41,0) 70%),
+        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.5), rgba(95,180,136,0) 70%),
+        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.5), rgba(217,142,95,0) 70%);
+    }
+
     .menuHeader {
       display: flex;
       align-items: center;
@@ -695,21 +720,29 @@
       margin: 24px 0 10px;
     }
 
-    .menuHistoryList {
+    .menuHistoryStrip {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-snap-type: x proximity;
+      padding: 2px 2px 10px;
+      margin: 0 -2px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .menuHistoryItem {
-      width: 100%;
+      flex: none;
+      width: 120px;
+      scroll-snap-align: start;
       display: flex;
-      align-items: center;
-      gap: 12px;
-      background: none;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      background: var(--panel2);
       border: 1px solid var(--stroke);
-      border-radius: 12px;
-      padding: 10px 12px;
+      border-radius: 14px;
+      padding: 10px;
       box-sizing: border-box;
       text-align: left;
       cursor: pointer;
@@ -723,19 +756,142 @@
     }
 
     .menuHistoryItem .menuThumb {
-      width: 40px;
-      height: 40px;
-      font-size: 18px;
+      width: 100%;
+      height: 84px;
+      border-radius: 10px;
+      font-size: 22px;
     }
 
     .menuHistoryDate {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .menuHistoryItem .menuStatus {
+      font-size: 11px;
     }
 
     .menuHistoryEmpty {
       font-size: 13px;
       color: var(--muted);
+    }
+
+    .menuArchiveBtn {
+      display: block;
+      margin: 4px 0 0;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 10px 18px;
+      font: inherit;
+      font-weight: 650;
+      font-size: 13px;
+      color: inherit;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .menuArchiveBtn:active {
+      transform: translateY(1px);
+    }
+
+    /* Archive overlay: month-by-month browse of older weeks. Same layering
+       approach as .menuOverlay (fixed, above everything but below nothing
+       since it's only ever opened from the menu). */
+    .archiveOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 210;
+      background: var(--bg);
+      box-sizing: border-box;
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      overflow-y: auto;
+      display: none;
+    }
+
+    .archiveOverlay.show {
+      display: block;
+    }
+
+    .archiveHeader {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .archiveTitle {
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0 0 2px;
+    }
+
+    .archiveSubtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .archiveCloseBtn {
+      flex: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      color: inherit;
+      font-size: 15px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .archiveMonthNav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .archiveNavBtn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      color: inherit;
+      font-size: 17px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .archiveNavBtn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .archiveMonthLabel {
+      min-width: 160px;
+      text-align: center;
+      font-weight: 650;
+      font-size: 15px;
+    }
+
+    .archiveGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .archiveGrid .menuHistoryItem {
+      width: 100%;
+    }
+
+    .archiveEmpty {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      padding: 24px 0;
     }
 
     /* Hint button */
@@ -923,7 +1079,24 @@
         </div>
       </button>
       <h2 class="menuHistoryTitle" data-i18n="menuHistoryTitle"></h2>
-      <div class="menuHistoryList" id="menuHistoryList"></div>
+      <div class="menuHistoryStrip" id="menuHistoryStrip"></div>
+      <button type="button" class="menuArchiveBtn" id="menuArchiveBtn" data-i18n="menuArchiveButton"></button>
+    </div>
+
+    <div class="archiveOverlay" id="archiveOverlay">
+      <div class="archiveHeader">
+        <div>
+          <h1 class="archiveTitle" data-i18n="archiveTitle"></h1>
+          <div class="archiveSubtitle" data-i18n="archiveSubtitle"></div>
+        </div>
+        <button type="button" class="archiveCloseBtn" id="archiveCloseBtn" data-i18n-aria="archiveCloseLabel">✕</button>
+      </div>
+      <div class="archiveMonthNav">
+        <button type="button" class="archiveNavBtn" id="archivePrevBtn" data-i18n-aria="archivePrevLabel">‹</button>
+        <div class="archiveMonthLabel" id="archiveMonthLabel"></div>
+        <button type="button" class="archiveNavBtn" id="archiveNextBtn" data-i18n-aria="archiveNextLabel">›</button>
+      </div>
+      <div class="archiveGrid" id="archiveGrid"></div>
     </div>
 
     <div class="homeBtn zoomBtn" id="homeBtn" role="button" tabindex="0" data-i18n-aria="backToMenuLabel">←</div>
@@ -1098,23 +1271,35 @@
       return mapPuzzleRow(rows[0]);
     }
 
-    // Past weeks, newest first. Capped at a year's worth (52 weekly puzzles) —
-    // not paginated in this version. Deliberately doesn't select the painting's
+    // Past weeks, newest first. Deliberately doesn't select the painting's
     // title/artist: history rows are labeled by date only, so browsing the list
     // itself doesn't spoil a puzzle before it's opened.
-    async function fetchPuzzleHistory() {
+    async function fetchPuzzleHistory(limit) {
       const nowIso = new Date().toISOString();
       const rows = await supabaseSelect('rotation_schedule', {
         select: 'id,active_from,active_until,puzzles(id,reference_png_storage_path)',
         active_until: `lte.${nowIso}`,
         order: 'active_from.desc',
-        limit: '52',
+        limit: String(limit),
       });
       return rows.map((row) => ({
         puzzleId: row.puzzles.id,
         activeFrom: row.active_from,
         referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
       }));
+    }
+
+    // The short strip on the menu only needs a handful of recent weeks.
+    function fetchRecentPuzzleHistory() {
+      return fetchPuzzleHistory(8);
+    }
+
+    // The full archive, for the month-browsable view — a generous cap (10
+    // years of weekly puzzles) rather than true pagination, since at that
+    // scale fetching it all once and grouping client-side by month is simpler
+    // than paginating server-side per month.
+    function fetchPuzzleArchive() {
+      return fetchPuzzleHistory(520);
     }
 
     // Per-puzzle painting progress, kept client-side only (no user accounts).
@@ -2327,15 +2512,41 @@
       }
     }
 
+    // Shared by the menu's horizontal strip and the archive grid — a button
+    // card for one past week's puzzle.
+    function buildHistoryCard(row) {
+      const progress = getPuzzleProgress(row.puzzleId);
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'menuHistoryItem';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'menuThumb';
+      setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
+
+      const date = document.createElement('div');
+      date.className = 'menuHistoryDate';
+      date.textContent = t('menuWeekOf', { date: formatWeekDate(row.activeFrom) });
+      const status = document.createElement('div');
+      status.className = 'menuStatus';
+      status.textContent = menuStatusLabel(progress);
+
+      item.appendChild(thumb);
+      item.appendChild(date);
+      item.appendChild(status);
+      item.addEventListener('click', () => goToPuzzle(row.puzzleId));
+      return item;
+    }
+
     async function renderMenu() {
       document.getElementById('menuOverlay').classList.add('show');
 
       const todayStatusEl = document.getElementById('menuTodayStatus');
-      const historyListEl0 = document.getElementById('menuHistoryList');
+      const historyStripEl0 = document.getElementById('menuHistoryStrip');
       todayStatusEl.textContent = t('loading');
-      historyListEl0.innerHTML = '';
+      historyStripEl0.innerHTML = '';
 
-      const [todayResult, historyResult] = await Promise.allSettled([fetchActivePuzzle(), fetchPuzzleHistory()]);
+      const [todayResult, historyResult] = await Promise.allSettled([fetchActivePuzzle(), fetchRecentPuzzleHistory()]);
 
       const todayCard = document.getElementById('menuTodayCard');
       const todayThumb = document.getElementById('menuTodayThumb');
@@ -2351,43 +2562,107 @@
         todayCard.disabled = true;
       }
 
-      const historyListEl = document.getElementById('menuHistoryList');
-      historyListEl.innerHTML = '';
+      const historyStripEl = document.getElementById('menuHistoryStrip');
+      historyStripEl.innerHTML = '';
       const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
       if (historyResult.status === 'rejected') console.error(historyResult.reason);
       if (!historyRows.length) {
         const empty = document.createElement('div');
         empty.className = 'menuHistoryEmpty';
         empty.textContent = t('menuHistoryEmpty');
-        historyListEl.appendChild(empty);
+        historyStripEl.appendChild(empty);
+      } else {
+        for (const row of historyRows) {
+          historyStripEl.appendChild(buildHistoryCard(row));
+        }
+      }
+
+      wireArchive();
+    }
+
+    // Archive state: fetched once (lazily, on first open) and grouped by
+    // "YYYY-MM" (in the puzzle's own local time zone) so month navigation is
+    // just filtering an already-fetched array, no repeat network round trips.
+    let archiveRowsByMonth = null;
+    let archiveMonthKeys = [];
+    let archiveMonthIndex = 0;
+
+    function monthKey(iso) {
+      const d = new Date(iso);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function monthLabel(key) {
+      const [year, month] = key.split('-').map(Number);
+      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
+      return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
+    }
+
+    async function loadArchiveData() {
+      if (archiveRowsByMonth) return;
+      const rows = await fetchPuzzleArchive();
+      archiveRowsByMonth = new Map();
+      for (const row of rows) {
+        const key = monthKey(row.activeFrom);
+        if (!archiveRowsByMonth.has(key)) archiveRowsByMonth.set(key, []);
+        archiveRowsByMonth.get(key).push(row);
+      }
+      // Oldest first, so "next" moves forward in time.
+      archiveMonthKeys = Array.from(archiveRowsByMonth.keys()).sort();
+      archiveMonthIndex = archiveMonthKeys.length - 1;
+    }
+
+    function renderArchiveMonth() {
+      const grid = document.getElementById('archiveGrid');
+      const label = document.getElementById('archiveMonthLabel');
+      const prevBtn = document.getElementById('archivePrevBtn');
+      const nextBtn = document.getElementById('archiveNextBtn');
+      grid.innerHTML = '';
+
+      if (!archiveMonthKeys.length) {
+        label.textContent = '';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        const empty = document.createElement('div');
+        empty.className = 'archiveEmpty';
+        empty.textContent = t('archiveEmpty');
+        grid.appendChild(empty);
         return;
       }
-      for (const row of historyRows) {
-        const progress = getPuzzleProgress(row.puzzleId);
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'menuHistoryItem';
 
-        const thumb = document.createElement('div');
-        thumb.className = 'menuThumb';
-        setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
+      const key = archiveMonthKeys[archiveMonthIndex];
+      label.textContent = monthLabel(key);
+      prevBtn.disabled = archiveMonthIndex <= 0;
+      nextBtn.disabled = archiveMonthIndex >= archiveMonthKeys.length - 1;
 
-        const body = document.createElement('div');
-        body.className = 'menuTodayBody';
-        const date = document.createElement('div');
-        date.className = 'menuHistoryDate';
-        date.textContent = t('menuWeekOf', { date: formatWeekDate(row.activeFrom) });
-        const status = document.createElement('div');
-        status.className = 'menuStatus';
-        status.textContent = menuStatusLabel(progress);
-        body.appendChild(date);
-        body.appendChild(status);
-
-        item.appendChild(thumb);
-        item.appendChild(body);
-        item.addEventListener('click', () => goToPuzzle(row.puzzleId));
-        historyListEl.appendChild(item);
+      const rows = archiveRowsByMonth.get(key) || [];
+      for (const row of rows) {
+        grid.appendChild(buildHistoryCard(row));
       }
+    }
+
+    async function openArchive() {
+      document.getElementById('archiveOverlay').classList.add('show');
+      const label = document.getElementById('archiveMonthLabel');
+      label.textContent = t('loading');
+      await loadArchiveData();
+      renderArchiveMonth();
+    }
+
+    function closeArchive() {
+      document.getElementById('archiveOverlay').classList.remove('show');
+    }
+
+    function wireArchive() {
+      const openBtn = document.getElementById('menuArchiveBtn');
+      openBtn.addEventListener('click', openArchive);
+      document.getElementById('archiveCloseBtn').addEventListener('click', closeArchive);
+      document.getElementById('archivePrevBtn').addEventListener('click', () => {
+        if (archiveMonthIndex > 0) { archiveMonthIndex -= 1; renderArchiveMonth(); }
+      });
+      document.getElementById('archiveNextBtn').addEventListener('click', () => {
+        if (archiveMonthIndex < archiveMonthKeys.length - 1) { archiveMonthIndex += 1; renderArchiveMonth(); }
+      });
     }
 
     function wireHomeButton() {
