@@ -799,7 +799,14 @@
       font-size: 14px;
       font-weight: 650;
       color: var(--muted);
-      margin: 24px 0 10px;
+      margin: 24px 0 0;
+    }
+
+    .menuHistorySubtitle {
+      font-size: 12px;
+      color: var(--muted);
+      opacity: 0.8;
+      margin: 2px 0 10px;
     }
 
     .menuHistoryStrip {
@@ -844,7 +851,7 @@
       font-size: 22px;
     }
 
-    .menuHistoryDate {
+    .menuHistoryNumber {
       font-size: 12px;
       font-weight: 650;
     }
@@ -877,9 +884,9 @@
       transform: translateY(1px);
     }
 
-    /* Archive overlay: month-by-month browse of older weeks. Same layering
-       approach as .menuOverlay (fixed, above everything but below nothing
-       since it's only ever opened from the menu). */
+    /* Archive overlay: a flat grid of every past, numbered puzzle. Same
+       layering approach as .menuOverlay (fixed, above everything but below
+       nothing since it's only ever opened from the menu). */
     .archiveOverlay {
       position: fixed;
       inset: 0;
@@ -927,39 +934,8 @@
       touch-action: manipulation;
     }
 
-    .archiveMonthNav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-
-    .archiveNavBtn {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      color: inherit;
-      font-size: 17px;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .archiveNavBtn:disabled {
-      opacity: 0.35;
-      cursor: default;
-    }
-
-    .archiveMonthLabel {
-      min-width: 160px;
-      text-align: center;
-      font-weight: 650;
-      font-size: 15px;
-    }
-
     .archiveGrid {
+      margin-top: 18px;
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 10px;
@@ -1165,6 +1141,7 @@
         </div>
       </button>
       <h2 class="menuHistoryTitle" data-i18n="menuHistoryTitle"></h2>
+      <div class="menuHistorySubtitle" data-i18n="menuHistorySubtitle"></div>
       <div class="menuHistoryStrip" id="menuHistoryStrip"></div>
       <button type="button" class="menuArchiveBtn" id="menuArchiveBtn" data-i18n="menuArchiveButton"></button>
     </div>
@@ -1176,11 +1153,6 @@
           <div class="archiveSubtitle" data-i18n="archiveSubtitle"></div>
         </div>
         <button type="button" class="archiveCloseBtn" id="archiveCloseBtn" data-i18n-aria="archiveCloseLabel">✕</button>
-      </div>
-      <div class="archiveMonthNav">
-        <button type="button" class="archiveNavBtn" id="archivePrevBtn" data-i18n-aria="archivePrevLabel">‹</button>
-        <div class="archiveMonthLabel" id="archiveMonthLabel"></div>
-        <button type="button" class="archiveNavBtn" id="archiveNextBtn" data-i18n-aria="archiveNextLabel">›</button>
       </div>
       <div class="archiveGrid" id="archiveGrid"></div>
     </div>
@@ -1428,35 +1400,42 @@
       return mapPuzzleRow(rows[0]);
     }
 
-    // Past weeks, newest first. Deliberately doesn't select the painting's
-    // title/artist: history rows are labeled by date only, so browsing the list
-    // itself doesn't spoil a puzzle before it's opened.
-    async function fetchPuzzleHistory(limit) {
-      const nowIso = new Date().toISOString();
+    // Past puzzles, newest first, each labeled by its release order ("#N")
+    // rather than its date. Deliberately doesn't select the painting's
+    // title/artist: history rows are labeled by number only, so browsing the
+    // list itself doesn't spoil a puzzle before it's opened.
+    //
+    // A puzzle's number is its 1-based position in the *entire* rotation
+    // schedule ordered by active_from ascending (#1 = the very first puzzle
+    // ever scheduled), so it stays stable as new puzzles get appended to the
+    // end every week — it's computed from position, not stored, so this always
+    // fetches the full schedule (including not-yet-active future rows, which
+    // are then filtered out below) rather than just the "limit" requested.
+    async function fetchNumberedPuzzleHistory() {
       const rows = await supabaseSelect('rotation_schedule', {
-        select: 'id,active_from,active_until,puzzles(id,reference_png_storage_path)',
-        active_until: `lte.${nowIso}`,
-        order: 'active_from.desc',
-        limit: String(limit),
+        select: 'id,active_until,puzzles(id,reference_png_storage_path)',
+        order: 'active_from.asc',
+        limit: '1000',
       });
-      return rows.map((row) => ({
+      const nowIso = new Date().toISOString();
+      const numbered = rows.map((row, i) => ({
         puzzleId: row.puzzles.id,
-        activeFrom: row.active_from,
+        number: i + 1,
+        activeUntil: row.active_until,
         referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
       }));
+      return numbered.filter((row) => row.activeUntil <= nowIso).reverse();
     }
 
-    // The short strip on the menu only needs a handful of recent weeks.
-    function fetchRecentPuzzleHistory() {
-      return fetchPuzzleHistory(8);
+    // The short strip on the menu only needs a handful of recent puzzles.
+    async function fetchRecentPuzzleHistory() {
+      return (await fetchNumberedPuzzleHistory()).slice(0, 8);
     }
 
-    // The full archive, for the month-browsable view — a generous cap (10
-    // years of weekly puzzles) rather than true pagination, since at that
-    // scale fetching it all once and grouping client-side by month is simpler
-    // than paginating server-side per month.
+    // The full archive: every past puzzle, flat (no date-based grouping —
+    // puzzles are numbered, not dated, so there's nothing to group by).
     function fetchPuzzleArchive() {
-      return fetchPuzzleHistory(520);
+      return fetchNumberedPuzzleHistory();
     }
 
     // Per-puzzle painting progress, kept client-side only (no user accounts).
@@ -2655,13 +2634,6 @@
       location.reload();
     }
 
-    function formatWeekDate(iso) {
-      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
-      return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' })
-        .format(new Date(iso))
-        .replace(/\.$/, '');
-    }
-
     function menuStatusLabel(progress) {
       if (progress.completed) return t('menuStatusCompleted');
       if (progress.painted.length > 0) return t('menuStatusInProgress');
@@ -2681,7 +2653,8 @@
     }
 
     // Shared by the menu's horizontal strip and the archive grid — a button
-    // card for one past week's puzzle.
+    // card for one past puzzle. Labeled by its release order ("#N"), not its
+    // date — see fetchNumberedPuzzleHistory.
     function buildHistoryCard(row) {
       const progress = getPuzzleProgress(row.puzzleId);
       const item = document.createElement('button');
@@ -2692,15 +2665,15 @@
       thumb.className = 'menuThumb';
       setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
 
-      const date = document.createElement('div');
-      date.className = 'menuHistoryDate';
-      date.textContent = t('menuWeekOf', { date: formatWeekDate(row.activeFrom) });
+      const number = document.createElement('div');
+      number.className = 'menuHistoryNumber';
+      number.textContent = t('menuPuzzleNumber', { num: row.number });
       const status = document.createElement('div');
       status.className = 'menuStatus';
       status.textContent = menuStatusLabel(progress);
 
       item.appendChild(thumb);
-      item.appendChild(date);
+      item.appendChild(number);
       item.appendChild(status);
       item.addEventListener('click', () => goToPuzzle(row.puzzleId));
       return item;
@@ -2748,49 +2721,16 @@
       wireArchive();
     }
 
-    // Archive state: fetched once (lazily, on first open) and grouped by
-    // "YYYY-MM" (in the puzzle's own local time zone) so month navigation is
-    // just filtering an already-fetched array, no repeat network round trips.
-    let archiveRowsByMonth = null;
-    let archiveMonthKeys = [];
-    let archiveMonthIndex = 0;
+    // Archive state: fetched once, lazily, on first open — a flat, numbered
+    // list (no date-based grouping), so opening it again just re-renders the
+    // already-fetched array with no repeat network round trip.
+    let archiveRows = null;
 
-    function monthKey(iso) {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    }
-
-    function monthLabel(key) {
-      const [year, month] = key.split('-').map(Number);
-      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
-      return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
-    }
-
-    async function loadArchiveData() {
-      if (archiveRowsByMonth) return;
-      const rows = await fetchPuzzleArchive();
-      archiveRowsByMonth = new Map();
-      for (const row of rows) {
-        const key = monthKey(row.activeFrom);
-        if (!archiveRowsByMonth.has(key)) archiveRowsByMonth.set(key, []);
-        archiveRowsByMonth.get(key).push(row);
-      }
-      // Oldest first, so "next" moves forward in time.
-      archiveMonthKeys = Array.from(archiveRowsByMonth.keys()).sort();
-      archiveMonthIndex = archiveMonthKeys.length - 1;
-    }
-
-    function renderArchiveMonth() {
+    function renderArchiveGrid() {
       const grid = document.getElementById('archiveGrid');
-      const label = document.getElementById('archiveMonthLabel');
-      const prevBtn = document.getElementById('archivePrevBtn');
-      const nextBtn = document.getElementById('archiveNextBtn');
       grid.innerHTML = '';
 
-      if (!archiveMonthKeys.length) {
-        label.textContent = '';
-        prevBtn.disabled = true;
-        nextBtn.disabled = true;
+      if (!archiveRows.length) {
         const empty = document.createElement('div');
         empty.className = 'archiveEmpty';
         empty.textContent = t('archiveEmpty');
@@ -2798,23 +2738,19 @@
         return;
       }
 
-      const key = archiveMonthKeys[archiveMonthIndex];
-      label.textContent = monthLabel(key);
-      prevBtn.disabled = archiveMonthIndex <= 0;
-      nextBtn.disabled = archiveMonthIndex >= archiveMonthKeys.length - 1;
-
-      const rows = archiveRowsByMonth.get(key) || [];
-      for (const row of rows) {
+      for (const row of archiveRows) {
         grid.appendChild(buildHistoryCard(row));
       }
     }
 
     async function openArchive() {
       document.getElementById('archiveOverlay').classList.add('show');
-      const label = document.getElementById('archiveMonthLabel');
-      label.textContent = t('loading');
-      await loadArchiveData();
-      renderArchiveMonth();
+      if (!archiveRows) {
+        const grid = document.getElementById('archiveGrid');
+        grid.textContent = t('loading');
+        archiveRows = await fetchPuzzleArchive();
+      }
+      renderArchiveGrid();
     }
 
     function closeArchive() {
@@ -2825,12 +2761,6 @@
       const openBtn = document.getElementById('menuArchiveBtn');
       openBtn.addEventListener('click', openArchive);
       document.getElementById('archiveCloseBtn').addEventListener('click', closeArchive);
-      document.getElementById('archivePrevBtn').addEventListener('click', () => {
-        if (archiveMonthIndex > 0) { archiveMonthIndex -= 1; renderArchiveMonth(); }
-      });
-      document.getElementById('archiveNextBtn').addEventListener('click', () => {
-        if (archiveMonthIndex < archiveMonthKeys.length - 1) { archiveMonthIndex += 1; renderArchiveMonth(); }
-      });
     }
 
     function wireHomeButton() {

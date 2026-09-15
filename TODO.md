@@ -38,6 +38,9 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Show a plain short date ("14. sep") instead of "Week of .../Uge ..." on the menu/archive history cards
 - [x] Clear all existing paintings/puzzles/rotation-schedule data (DB rows + storage objects) and generate 5 fresh weekly puzzles
 - [x] Fix the painting canvas rendering undersized on cold launch (fixed itself on rotate) by switching `--palette-h` from plain `vh` to `dvh`, same fix already applied to `.app`'s height
+- [x] Replace the "14. sep"-style date on history/archive cards with a stable release-order number ("#1", "#2", ...) and add "a new painting is added every week" info copy in its place
+- [x] Replace the Archive's month-by-month browsing with one flat numbered grid
+- [x] Grow the prepared puzzle backlog from 5 to 20 via the generator backend
 
 ## Next up
 
