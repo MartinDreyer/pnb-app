@@ -820,6 +820,23 @@
       -webkit-overflow-scrolling: touch;
     }
 
+    /* On a screen wide enough to fit several cards per row (iPad and up), a
+       single horizontally-scrolling band wastes most of the screen's width
+       and height. Switch to a wrapping grid of several bands instead — same
+       cards, same click targets, just laid out to use the extra room. */
+    @media (min-width: 700px) {
+      .menuHistoryStrip {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        overflow-x: visible;
+        overflow-y: visible;
+      }
+
+      .menuHistoryStrip .menuHistoryItem {
+        width: 100%;
+      }
+    }
+
     .menuHistoryItem {
       flex: none;
       width: 120px;
@@ -1375,9 +1392,14 @@
       return numbered.filter((row) => row.activeUntil <= nowIso).reverse();
     }
 
-    // The short strip on the menu only needs a handful of recent puzzles.
+    // The menu's history strip: on a narrow phone screen this is one
+    // horizontally-scrolling row, so a handful is plenty — but on a wider
+    // screen (see the .menuHistoryStrip media query) it wraps into several
+    // rows, so a larger recent-history slice actually fills the space
+    // instead of leaving it mostly empty. The full history is always one tap
+    // away via the Archive regardless.
     async function fetchRecentPuzzleHistory() {
-      return (await fetchNumberedPuzzleHistory()).slice(0, 8);
+      return (await fetchNumberedPuzzleHistory()).slice(0, 20);
     }
 
     // The full archive: every past puzzle, flat (no date-based grouping —
