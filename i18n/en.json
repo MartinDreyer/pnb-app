@@ -48,6 +48,7 @@
   "triviaFunFactAcquired": "This {{medium}} by {{artist}} entered SMK's collection in {{year}}.",
   "triviaFunFactMedium": "{{artist}} made this piece using: {{medium}}.",
   "triviaFunFactTags": "Image recognition sees: {{tags}}.",
+  "triviaAiDisclaimer": "✨ Written by AI (with web search) — may contain mistakes.",
   "triviaArtistFallback": "The artist",
   "errorFileProtocol": "Error: browser blocked loading files. Open this via a web server (http/https), not file://. Example: run “python -m http.server 5173” in this folder, then open http://127.0.0.1:5173/index.html",
   "errorGeneric": "Error: {{message}}",

@@ -1071,6 +1071,23 @@
       color: var(--text);
     }
 
+    .triviaAiBlurb {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin: 0 0 12px;
+    }
+
+    .triviaAiDisclaimer {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
     .triviaLoading {
       font-size: 13px;
       color: var(--muted);
@@ -1340,10 +1357,15 @@
         title: puzzlesRow.paintings ? puzzlesRow.paintings.title : '',
         artist: puzzlesRow.paintings ? puzzlesRow.paintings.artist : '',
         smkObjectNumber: puzzlesRow.paintings ? puzzlesRow.paintings.smk_object_number : '',
+        // Set only when the generator backend's optional AI-enrichment step (web
+        // search + LLM, see paintbynumbersgenerator-master/backend/src/enrichment.ts)
+        // ran successfully for this painting — null/absent just means the trivia panel
+        // skips that section (see renderTriviaPanel).
+        aiSummary: puzzlesRow.paintings ? puzzlesRow.paintings.ai_summary : null,
       };
     }
 
-    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number)';
+    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number,ai_summary)';
 
     // The "current puzzle" is whichever rotation_schedule row's active_from/active_until
     // window contains right now (see pnb-database's schema docs). RLS on the anon key
@@ -2199,6 +2221,28 @@
       panel.appendChild(close);
       panel.appendChild(title);
       panel.appendChild(artist);
+
+      // AI-researched blurb: generated once server-side when the painting was first
+      // pulled (see paintbynumbersgenerator-master/backend/src/enrichment.ts), stored
+      // on the painting row — no network call needed here, and no "loading" state,
+      // unlike the trivia fetch below. Always paired with a disclaimer, since it can
+      // be wrong.
+      if (puzzle.aiSummary) {
+        const aiBlurb = document.createElement('div');
+        aiBlurb.className = 'triviaAiBlurb';
+
+        const aiText = document.createElement('div');
+        aiText.textContent = puzzle.aiSummary;
+        aiBlurb.appendChild(aiText);
+
+        const aiDisclaimer = document.createElement('div');
+        aiDisclaimer.className = 'triviaAiDisclaimer';
+        aiDisclaimer.textContent = t('triviaAiDisclaimer');
+        aiBlurb.appendChild(aiDisclaimer);
+
+        panel.appendChild(aiBlurb);
+      }
+
       panel.appendChild(loading);
 
       function renderTriviaDetails(trivia) {

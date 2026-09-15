@@ -48,6 +48,7 @@
   "triviaFunFactAcquired": "Dette værk ({{medium}}) af {{artist}} kom ind i SMK's samling i {{year}}.",
   "triviaFunFactMedium": "{{artist}} skabte dette værk i teknikken: {{medium}}.",
   "triviaFunFactTags": "Billedgenkendelse ser: {{tags}}.",
+  "triviaAiDisclaimer": "✨ Skrevet af AI (med websøgning) — kan indeholde fejl.",
   "triviaArtistFallback": "Kunstneren",
   "errorFileProtocol": "Fejl: browseren blokerede indlæsning af filer. Åbn siden via en webserver (http/https), ikke file://. Eksempel: kør „python -m http.server 5173“ i denne mappe, og åbn derefter http://127.0.0.1:5173/index.html",
   "errorGeneric": "Fejl: {{message}}",

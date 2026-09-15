@@ -47,10 +47,14 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Backdate the 20-puzzle backlog so #1-19 are usable now as history/archive baseline and #20 is today's puzzle, with the weekly schedule continuing from #21
 - [x] Make the menu's history strip wrap into several rows on iPad-sized screens instead of a single horizontally-scrolling band
 - [x] Fix `.app` rendering at a stale, too-narrow width in portrait mode after a menu-to-puzzle navigation (gave `width` the same `--app-vw`/`100dvw` treatment `height` already had)
+- [x] Add an optional AI-researched (web search) blurb about each painting/painter, shown on completion with an AI-disclaimer; wired into puzzle generation so it runs once per new painting
+- [x] Add the missing `paintings.used_at` migration (schema-drift gap found while adding the above)
 
 ## Next up
 
 - [ ] Fix `runDailyPreparation`/`/api/generate` crashing (`StorageApiError`, 413) when a chosen SMK painting's `image_native` exceeds the `puzzles` bucket's 50MiB limit (hit a real 413MB download on 2026-09-15) — either downscale the reference image before upload, raise the bucket limit, or skip oversized artworks up front
+- [ ] Set `ANTHROPIC_API_KEY` in `paintbynumbersgenerator-master/backend/.env` to actually activate the AI painting-blurb enrichment (wired in but inactive without it — see `src/enrichment.ts`)
+- [ ] Backfill `ai_summary` for the current 20 prepared puzzles once a key is set — they were generated before the enrichment wiring landed, so none have a blurb yet; only #21 onward will pick it up automatically
 
 - [ ] Refresh Android's `mipmap-*/ic_launcher*.png` launcher icons (still the default Capacitor placeholder)
 - [ ] Enroll in the paid Apple Developer Program so the app can actually be uploaded to TestFlight
