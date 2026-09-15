@@ -37,6 +37,7 @@ new items to the end of the relevant section rather than inserting mid-list.
 
 - [x] Show a plain short date ("14. sep") instead of "Week of .../Uge ..." on the menu/archive history cards
 - [x] Clear all existing paintings/puzzles/rotation-schedule data (DB rows + storage objects) and generate 5 fresh weekly puzzles
+- [x] Fix the painting canvas rendering undersized on cold launch (fixed itself on rotate) by switching `--palette-h` from plain `vh` to `dvh`, same fix already applied to `.app`'s height
 
 ## Next up
 

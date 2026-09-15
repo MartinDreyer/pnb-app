@@ -10,8 +10,14 @@
       --target-w: 1620;
       --target-h: 2160;
       --topbar-h: 64px;
-      /* Floating palette height */
+      /* Floating palette height. Plain vh suffers the same iPad Safari/
+         WKWebView bug described on .app below (keeps the pre-rotation
+         value after a portrait<->landscape switch, understating the
+         painting's available height until something forces a relayout) —
+         the dvh override the line below fixes it the same way .app's
+         height does. */
       --palette-h: clamp(220px, 22vh, 360px);
+      --palette-h: clamp(220px, 22dvh, 360px);
       --bg: #FFFFFF;
       --panel: #FFFFFF;
       --panel2: #FFFFFF;
