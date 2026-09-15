@@ -24,6 +24,15 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Dev-only: index.html's config.js points SUPABASE_URL at the dev machine's
+	     LAN address (currently a Bonjour/.local hostname, see config.js) so the app
+	     can reach the local Supabase stack from a physical device. iOS 14+ gates any
+	     connection to a private-network IP or .local hostname behind this "local
+	     network" permission — without the usage string, WKWebView's fetch() to it
+	     just fails/times out silently instead of prompting. Drop this key once the
+	     app talks to a real deployed Supabase project instead. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Used in development to load puzzles from the local Supabase server running on your computer.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
