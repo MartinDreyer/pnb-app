@@ -4,7 +4,7 @@
   "menuTodayTitle": "Today's puzzle",
   "menuHistoryTitle": "Past weeks",
   "menuHistoryEmpty": "No past puzzles yet — check back after this week.",
-  "menuWeekOf": "Week of {{date}}",
+  "menuWeekOf": "{{date}}",
   "menuStatusCompleted": "Completed",
   "menuStatusInProgress": "In progress",
   "menuStatusNotStarted": "Not started",

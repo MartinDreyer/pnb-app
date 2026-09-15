@@ -35,7 +35,15 @@
     }
 
     .app {
-      height: 100vh;
+      /* iPad Safari/WKWebView sometimes keeps the pre-rotation 100vh value
+         after a landscape<->portrait switch (the address bar/safe-area
+         chrome changes height but the vh unit isn't recomputed), leaving a
+         white gap below the fixed-height app shell. --app-vh is kept in
+         sync with the real innerHeight via JS (see wireViewportHeightSync)
+         as the primary fix; 100dvh is layered on top for browsers new
+         enough to compute it correctly on their own. */
+      height: calc(var(--app-vh, 1vh) * 100);
+      height: 100dvh;
       width: 100vw;
       position: relative;
     }
@@ -98,6 +106,7 @@
       background: var(--canvas-bg);
       position: absolute;
       inset: 0;
+      z-index: 0;
       padding-top: var(--topbar-h);
       /* Reserve space so the painting still fits in visible area */
       padding-bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px));
@@ -105,6 +114,25 @@
       overflow: hidden;
       display: grid;
       place-items: center;
+    }
+
+    /* Same soft colorful blobs as the menu (see .menuOverlay::before), toned
+       down further since this sits behind the actual artwork: low enough
+       opacity that it livens up the matte --canvas-bg without competing
+       with the painting's contrast. Painted behind .svgWrap via negative
+       z-index (requires .canvas's z-index:0 above to form a stacking
+       context to paint into). */
+    .canvas::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.28), rgba(110,168,255,0) 70%),
+        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.25), rgba(240,180,41,0) 70%),
+        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.25), rgba(95,180,136,0) 70%),
+        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.25), rgba(217,142,95,0) 70%);
     }
 
     .svgWrap {
@@ -414,6 +442,54 @@
 
     .fitWarning.show {
       display: block;
+    }
+
+    /* Temporary debug aid (see showDebugBanner): surfaces network/loading
+       failures that would otherwise fail silently behind the splash screen
+       (e.g. config.js's SUPABASE_URL pointing at a stale LAN IP). Deliberately
+       untranslated and technical (raw error + URL) rather than a polished
+       user-facing message — this is for diagnosing setup issues during
+       development, not the end-user error copy (that's errorGeneric/
+       errorNoActivePuzzle etc., shown separately). Above everything,
+       including the splash screen, so it's visible even if boot never
+       finishes. */
+    .debugBanner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: #b3261e;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 36px 10px 12px;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none;
+      max-height: 50vh;
+      overflow-y: auto;
+    }
+
+    .debugBanner.show {
+      display: block;
+    }
+
+    .debugBannerClose {
+      position: absolute;
+      top: calc(6px + env(safe-area-inset-top, 0px));
+      right: 8px;
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
     }
 
     /* Zoom affordance: one-time animated hint + persistent controls */
@@ -1051,6 +1127,10 @@
 </head>
 <body>
   <div class="app">
+    <div class="debugBanner" id="debugBanner">
+      <button class="debugBannerClose" id="debugBannerClose" type="button" aria-label="Close">&times;</button>
+      <div id="debugBannerText"></div>
+    </div>
     <div class="splashOverlay" id="splashOverlay">
       <div class="splashMark">
         <div class="splashSwatch"></div>
@@ -1202,6 +1282,23 @@
     // a longer language) and viewport width. .canvas/.fitWarning read this
     // var to offset around the topbar, so a hardcoded height would either
     // truncate text or let it overlap the canvas depending on language.
+    // Keeps --app-vh (1% of the real viewport height) in sync so .app's
+    // height doesn't get stuck at a stale value across an orientation
+    // change (see the --app-vh comment on .app). Listens on resize,
+    // orientationchange, and visualViewport's resize (fires slightly ahead
+    // of window resize on iOS and catches on-screen-keyboard changes too).
+    function wireViewportHeightSync() {
+      const sync = () => {
+        document.documentElement.style.setProperty('--app-vh', `${window.innerHeight * 0.01}px`);
+      };
+      sync();
+      window.addEventListener('resize', sync);
+      window.addEventListener('orientationchange', sync);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', sync);
+      }
+    }
+
     function wireTopbarHeightSync() {
       const topbar = document.querySelector('.topbar');
       if (!topbar || typeof ResizeObserver === 'undefined') return;
@@ -1210,6 +1307,52 @@
       };
       new ResizeObserver(sync).observe(topbar);
       sync();
+    }
+
+    // Shows a technical, untranslated debug banner across the top of the
+    // screen — see the .debugBanner CSS comment for why this exists and why
+    // it's deliberately not the polished i18n'd error copy. Also force-hides
+    // both splash screens: a hung/failed network call otherwise leaves the
+    // user staring at the splash animation forever, since the code that
+    // normally hides it (boot()'s `finally`) only runs once the awaited
+    // call actually settles.
+    function showDebugBanner(message) {
+      console.error('[debug]', message);
+      const banner = document.getElementById('debugBanner');
+      const textEl = document.getElementById('debugBannerText');
+      if (!banner || !textEl) return;
+      textEl.textContent = textEl.textContent ? `${textEl.textContent}\n\n${message}` : message;
+      banner.classList.add('show');
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+    }
+
+    function wireDebugBanner() {
+      const closeBtn = document.getElementById('debugBannerClose');
+      const banner = document.getElementById('debugBanner');
+      if (!closeBtn || !banner) return;
+      closeBtn.addEventListener('click', () => banner.classList.remove('show'));
+    }
+
+    // fetch() has no built-in timeout — against an unreachable host (e.g. a
+    // stale LAN IP in config.js after switching networks) it can hang far
+    // longer than a user will wait, which reads as "stuck on the splash
+    // screen" with no indication why. This fails fast instead, with an
+    // error message that names the URL so a bad SUPABASE_URL is obvious.
+    async function fetchWithTimeout(url, options, timeoutMs, label) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error(`Timed out after ${(timeoutMs / 1000).toFixed(0)}s contacting ${label || url}`);
+        }
+        throw new Error(`Network request failed for ${label || url}: ${err.message || err}`);
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     function storagePublicUrl(path) {
@@ -1224,10 +1367,18 @@
     }
 
     async function supabaseSelect(table, params) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${new URLSearchParams(params).toString()}`, {
-        headers: supabaseHeaders(),
-      });
-      if (!res.ok) throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
+      const url = `${SUPABASE_URL}/rest/v1/${table}?${new URLSearchParams(params).toString()}`;
+      let res;
+      try {
+        res = await fetchWithTimeout(url, { headers: supabaseHeaders() }, 10000, url);
+      } catch (err) {
+        showDebugBanner(`Supabase request failed:\n${url}\n\n${err.message || err}`);
+        throw err;
+      }
+      if (!res.ok) {
+        showDebugBanner(`Supabase request returned HTTP ${res.status}:\n${url}`);
+        throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
+      }
       return res.json();
     }
 
@@ -1393,8 +1544,17 @@
     }
 
     async function loadSvg(url) {
-      const res = await fetch(url, { cache: 'no-cache' });
-      if (!res.ok) throw new Error(t('errorLoadSvgFailed', { status: res.status, url }));
+      let res;
+      try {
+        res = await fetchWithTimeout(url, { cache: 'no-cache' }, 15000, url);
+      } catch (err) {
+        showDebugBanner(`SVG request failed:\n${url}\n\n${err.message || err}`);
+        throw err;
+      }
+      if (!res.ok) {
+        showDebugBanner(`SVG request returned HTTP ${res.status}:\n${url}`);
+        throw new Error(t('errorLoadSvgFailed', { status: res.status, url }));
+      }
       const txt = await res.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(txt, 'image/svg+xml');
@@ -2491,7 +2651,9 @@
 
     function formatWeekDate(iso) {
       const locale = LANG === 'da' ? 'da-DK' : 'en-US';
-      return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
+      return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' })
+        .format(new Date(iso))
+        .replace(/\.$/, '');
     }
 
     function menuStatusLabel(progress) {
@@ -2733,6 +2895,7 @@
 
     async function boot() {
       hideNativeSplash();
+      wireViewportHeightSync();
 
       // The animated splash is a first-impression/branding moment, not a generic
       // "please wait" spinner — it should only play once per app session (native
@@ -2771,9 +2934,15 @@
       }
     }
 
+    wireDebugBanner();
+
     boot().catch((err) => {
       console.error(err);
+      showDebugBanner(`boot() failed: ${err.message || err}\n\nSUPABASE_URL: ${SUPABASE_URL}`);
+      // #svgWrap only exists on the puzzle route (renderMenu's failures are
+      // handled inline instead) — guard rather than assume it's present.
       const svgWrap = document.getElementById('svgWrap');
+      if (!svgWrap) return;
       svgWrap.innerHTML = '';
       const msg = document.createElement('div');
       msg.className = 'loading';

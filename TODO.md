@@ -33,7 +33,14 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Make the puzzle-prep cadence configurable (any day interval, not just a fixed daily/weekly split) via the new Settings panel
 - [x] Fix the confusing admin schedule table (ambiguous dates, no past/active/upcoming indication) and add "Paintings" (used/available) and "Prepared but not used" overview tables
 
+## Done (2026-09-15)
+
+- [x] Show a plain short date ("14. sep") instead of "Week of .../Uge ..." on the menu/archive history cards
+- [x] Clear all existing paintings/puzzles/rotation-schedule data (DB rows + storage objects) and generate 5 fresh weekly puzzles
+
 ## Next up
+
+- [ ] Fix `runDailyPreparation`/`/api/generate` crashing (`StorageApiError`, 413) when a chosen SMK painting's `image_native` exceeds the `puzzles` bucket's 50MiB limit (hit a real 413MB download on 2026-09-15) — either downscale the reference image before upload, raise the bucket limit, or skip oversized artworks up front
 
 - [ ] Refresh Android's `mipmap-*/ic_launcher*.png` launcher icons (still the default Capacitor placeholder)
 - [ ] Enroll in the paid Apple Developer Program so the app can actually be uploaded to TestFlight

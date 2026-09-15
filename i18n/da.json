@@ -4,7 +4,7 @@
   "menuTodayTitle": "Dagens billede",
   "menuHistoryTitle": "Tidligere uger",
   "menuHistoryEmpty": "Ingen tidligere billeder endnu — kig forbi igen efter denne uge.",
-  "menuWeekOf": "Uge {{date}}",
+  "menuWeekOf": "{{date}}",
   "menuStatusCompleted": "Færdig",
   "menuStatusInProgress": "I gang",
   "menuStatusNotStarted": "Ikke startet",
