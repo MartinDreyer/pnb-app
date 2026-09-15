@@ -41,16 +41,21 @@
     }
 
     .app {
-      /* iPad Safari/WKWebView sometimes keeps the pre-rotation 100vh value
-         after a landscape<->portrait switch (the address bar/safe-area
-         chrome changes height but the vh unit isn't recomputed), leaving a
-         white gap below the fixed-height app shell. --app-vh is kept in
-         sync with the real innerHeight via JS (see wireViewportHeightSync)
-         as the primary fix; 100dvh is layered on top for browsers new
-         enough to compute it correctly on their own. */
+      /* iPad Safari/WKWebView sometimes keeps a stale pre-layout 100vh/100vw
+         value right after a fresh page load (this app navigates menu<->
+         puzzle via location.reload(), so this happens on every navigation,
+         not just cold launch) — the real viewport isn't reflected until
+         something forces a relayout, e.g. rotating the device. Same bug on
+         both axes: a stale height leaves a white gap below the app shell, a
+         stale (too narrow) width leaves blank space beside it. --app-vh/
+         --app-vw are kept in sync with the real innerHeight/innerWidth via
+         JS (see wireViewportSizeSync) as the primary fix; 100dvh/100dvw
+         are layered on top for browsers new enough to compute them
+         correctly on their own. */
       height: calc(var(--app-vh, 1vh) * 100);
       height: 100dvh;
-      width: 100vw;
+      width: calc(var(--app-vw, 1vw) * 100);
+      width: 100dvw;
       position: relative;
     }
 
@@ -1225,14 +1230,15 @@
     // a longer language) and viewport width. .canvas/.fitWarning read this
     // var to offset around the topbar, so a hardcoded height would either
     // truncate text or let it overlap the canvas depending on language.
-    // Keeps --app-vh (1% of the real viewport height) in sync so .app's
-    // height doesn't get stuck at a stale value across an orientation
-    // change (see the --app-vh comment on .app). Listens on resize,
+    // Keeps --app-vh/--app-vw (1% of the real viewport height/width) in sync
+    // so .app's size doesn't get stuck at a stale value across a navigation
+    // or orientation change (see the comment on .app). Listens on resize,
     // orientationchange, and visualViewport's resize (fires slightly ahead
     // of window resize on iOS and catches on-screen-keyboard changes too).
-    function wireViewportHeightSync() {
+    function wireViewportSizeSync() {
       const sync = () => {
         document.documentElement.style.setProperty('--app-vh', `${window.innerHeight * 0.01}px`);
+        document.documentElement.style.setProperty('--app-vw', `${window.innerWidth * 0.01}px`);
       };
       sync();
       window.addEventListener('resize', sync);
@@ -2726,7 +2732,7 @@
 
     async function boot() {
       hideNativeSplash();
-      wireViewportHeightSync();
+      wireViewportSizeSync();
 
       // The animated splash is a first-impression/branding moment, not a generic
       // "please wait" spinner — it should only play once per app session (native

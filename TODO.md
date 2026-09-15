@@ -46,6 +46,7 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Reword the "no active puzzle" error so it doesn't reference the admin control panel (real end users never see it)
 - [x] Backdate the 20-puzzle backlog so #1-19 are usable now as history/archive baseline and #20 is today's puzzle, with the weekly schedule continuing from #21
 - [x] Make the menu's history strip wrap into several rows on iPad-sized screens instead of a single horizontally-scrolling band
+- [x] Fix `.app` rendering at a stale, too-narrow width in portrait mode after a menu-to-puzzle navigation (gave `width` the same `--app-vw`/`100dvw` treatment `height` already had)
 
 ## Next up
 
