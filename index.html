@@ -1015,58 +1015,6 @@
       margin: 0 28px 2px 0;
     }
 
-    .triviaGuess {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin: 4px 28px 12px 0;
-    }
-
-    .triviaGuessPrompt {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .triviaGuessInput {
-      font: inherit;
-      font-size: 13px;
-      padding: 8px 10px;
-      border: 1px solid var(--stroke);
-      border-radius: 10px;
-      box-sizing: border-box;
-      width: 100%;
-    }
-
-    .triviaRevealBtn {
-      align-self: flex-start;
-      font-size: 13px;
-      font-weight: 650;
-      color: #fff;
-      background: var(--accent);
-      border: none;
-      border-radius: 999px;
-      padding: 8px 16px;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .triviaRevealBtn:active {
-      transform: translateY(1px);
-    }
-
-    .triviaGuessLine {
-      font-size: 12px;
-      margin-top: 2px;
-    }
-
-    .triviaGuessLine.correct {
-      color: #2a9d8f;
-    }
-
-    .triviaGuessLine.incorrect {
-      color: var(--muted);
-    }
-
     .triviaArtist {
       font-size: 13px;
       color: var(--muted);
@@ -2196,14 +2144,6 @@
       return { year, period, style, medium, funFact, wikidataUrl };
     }
 
-    // Compares a guess to the real answer leniently (trimmed, case/diacritic
-    // insensitive) — good enough for a fun self-check, not meant to catch typos.
-    function guessMatches(guess, answer) {
-      if (!guess || !answer) return false;
-      const normalize = (s) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      return normalize(guess) === normalize(answer);
-    }
-
     function renderTriviaPanel(svgWrap, puzzle) {
       const panel = document.createElement('div');
       panel.className = 'triviaPanel';
@@ -2218,9 +2158,11 @@
 
       const title = document.createElement('div');
       title.className = 'triviaTitle';
+      title.textContent = puzzle.title || t('triviaUntitled');
 
       const artist = document.createElement('div');
       artist.className = 'triviaArtist';
+      artist.textContent = puzzle.artist || '';
 
       const loading = document.createElement('div');
       loading.className = 'triviaLoading';
@@ -2229,13 +2171,7 @@
       panel.appendChild(close);
       panel.appendChild(title);
       panel.appendChild(artist);
-
-      // Guess-before-you-peek: title/artist and the trivia details below both
-      // stay hidden until the user reveals them (with or without guessing
-      // first), so a fast trivia-API response can't spoil the answer early.
-      let revealed = false;
-      let pendingTrivia = null;
-      let pendingError = false;
+      panel.appendChild(loading);
 
       function renderTriviaDetails(trivia) {
         loading.remove();
@@ -2277,83 +2213,15 @@
         }
       }
 
-      function guessLine(guess, answer) {
-        const line = document.createElement('div');
-        const correct = guessMatches(guess, answer);
-        line.className = `triviaGuessLine ${correct ? 'correct' : 'incorrect'}`;
-        line.textContent = `${t('triviaYourGuess', { guess })} — ${t(correct ? 'triviaGuessCorrect' : 'triviaGuessIncorrect')}`;
-        return line;
-      }
-
-      function reveal(titleGuess, artistGuess) {
-        if (revealed) return;
-        revealed = true;
-        guessForm.remove();
-
-        title.textContent = puzzle.title || t('triviaUntitled');
-        if (titleGuess) title.appendChild(guessLine(titleGuess, puzzle.title));
-
-        artist.textContent = puzzle.artist || '';
-        if (artistGuess) artist.appendChild(guessLine(artistGuess, puzzle.artist));
-
-        panel.appendChild(loading);
-        if (pendingTrivia) {
-          renderTriviaDetails(pendingTrivia);
-        } else if (pendingError) {
-          loading.textContent = t('triviaError');
-        }
-      }
-
-      const guessForm = document.createElement('div');
-      guessForm.className = 'triviaGuess';
-
-      const prompt = document.createElement('div');
-      prompt.className = 'triviaGuessPrompt';
-      prompt.textContent = t('triviaGuessPrompt');
-
-      const titleInput = document.createElement('input');
-      titleInput.className = 'triviaGuessInput';
-      titleInput.type = 'text';
-      titleInput.placeholder = t('triviaGuessTitlePlaceholder');
-
-      const artistInput = document.createElement('input');
-      artistInput.className = 'triviaGuessInput';
-      artistInput.type = 'text';
-      artistInput.placeholder = t('triviaGuessArtistPlaceholder');
-
-      const revealBtn = document.createElement('button');
-      revealBtn.type = 'button';
-      revealBtn.className = 'triviaRevealBtn';
-      revealBtn.textContent = t('triviaRevealButton');
-      const doReveal = () => reveal(titleInput.value, artistInput.value);
-      revealBtn.addEventListener('click', doReveal);
-      const revealOnEnter = (e) => { if (e.key === 'Enter') doReveal(); };
-      titleInput.addEventListener('keydown', revealOnEnter);
-      artistInput.addEventListener('keydown', revealOnEnter);
-
-      guessForm.appendChild(prompt);
-      guessForm.appendChild(titleInput);
-      guessForm.appendChild(artistInput);
-      guessForm.appendChild(revealBtn);
-      panel.appendChild(guessForm);
-
       svgWrap.appendChild(panel);
 
       requestAnimationFrame(() => panel.classList.add('show'));
 
       fetchPaintingTrivia(puzzle.smkObjectNumber, puzzle.title, puzzle.artist).then((trivia) => {
-        if (revealed) {
-          renderTriviaDetails(trivia);
-        } else {
-          pendingTrivia = trivia;
-        }
+        renderTriviaDetails(trivia);
       }).catch((err) => {
         console.error(err);
-        if (revealed) {
-          loading.textContent = t('triviaError');
-        } else {
-          pendingError = true;
-        }
+        loading.textContent = t('triviaError');
       });
     }
 
@@ -2393,7 +2261,8 @@
 
       loading.textContent = t('loadingPuzzle');
       // Deliberately not shown until completion (see the trivia panel) —
-      // the painting's title/artist would spoil the guessing game.
+      // the painting's title/artist would spoil the surprise of seeing what
+      // you've been painting.
 
       const palette = puzzle.palette;
       const counterByNum = buildSwatches(palette);
@@ -2588,10 +2457,14 @@
           onCorrectPaint(p);
         }
 
-        // Cheat: paint everything correctly at once (only unpainted regions count)
+        // Cheat: paint every unpainted region except one, always leaving at
+        // least one region for the user to paint themselves — so cheating
+        // never finishes the puzzle outright, no matter how many times it's
+        // pressed.
         cheatFn = () => {
-          for (const p of paintable) {
-            if (p.dataset.painted === '1') continue;
+          const unpainted = paintable.filter((p) => p.dataset.painted !== '1');
+          unpainted.pop();
+          for (const p of unpainted) {
             const fill = p.dataset.correctFill;
             if (fill) p.style.fill = fill;
             p.dataset.painted = '1';

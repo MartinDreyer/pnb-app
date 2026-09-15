@@ -41,6 +41,9 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Replace the "14. sep"-style date on history/archive cards with a stable release-order number ("#1", "#2", ...) and add "a new painting is added every week" info copy in its place
 - [x] Replace the Archive's month-by-month browsing with one flat numbered grid
 - [x] Grow the prepared puzzle backlog from 5 to 20 via the generator backend
+- [x] Make the cheat swatch always leave one region unpainted instead of finishing the puzzle
+- [x] Remove the trivia panel's guess-the-title/artist mini-game; show title/artist directly on completion
+- [x] Reword the "no active puzzle" error so it doesn't reference the admin control panel (real end users never see it)
 
 ## Next up
 
