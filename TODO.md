@@ -63,3 +63,7 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [ ] Build a leaderboard ranking guesses by how early/correct they were
 - [ ] Switch control-panel SMK browsing (search/random candidate lists) to `image_thumbnail` instead of `image_native`; keep `image_native` only for the painting actually chosen for generation
 - [ ] Move puzzle-prep scheduling off the Node process's `setInterval` onto a real cron/scheduler, so it runs reliably regardless of whether the control panel server is up
+
+## Done (2026-09-17)
+
+- [x] Add a `pnb-app` develop/production mode toggle (`window.PNB_CONFIG.ENV` in `config.js`) so production shows a translated, detail-free "something went wrong" popup with an error code instead of the technical debug banner/raw error message

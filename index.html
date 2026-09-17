@@ -503,6 +503,54 @@
       cursor: pointer;
     }
 
+    /* Production-mode counterpart to .debugBanner (see showProductionError):
+       a plain, translated "something went wrong" popup with no technical
+       detail, shown instead of the debug banner when
+       window.PNB_CONFIG.ENV === 'production'. Above everything, including
+       the splash screen, same as .debugBanner. */
+    .prodErrorOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.5);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .prodErrorOverlay.show {
+      display: flex;
+    }
+
+    .prodErrorBox {
+      background: #fff;
+      color: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 320px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .prodErrorBox #prodErrorText {
+      font-size: 15px;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .prodErrorClose {
+      border: none;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 14px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+
     /* Zoom affordance: one-time animated hint + persistent controls */
     .zoomHint {
       position: fixed;
@@ -1100,6 +1148,12 @@
       <button class="debugBannerClose" id="debugBannerClose" type="button" aria-label="Close">&times;</button>
       <div id="debugBannerText"></div>
     </div>
+    <div class="prodErrorOverlay" id="prodErrorOverlay">
+      <div class="prodErrorBox">
+        <div id="prodErrorText"></div>
+        <button class="prodErrorClose" id="prodErrorClose" type="button" data-i18n="errorPopupCloseLabel"></button>
+      </div>
+    </div>
     <div class="splashOverlay" id="splashOverlay">
       <div class="splashMark">
         <div class="splashSwatch"></div>
@@ -1203,6 +1257,12 @@
     const FALLBACK_LANG = 'da';
     let I18N = {};
 
+    // Toggle between the technical debug banner (development, the default)
+    // and a short, translated "something went wrong" popup with no
+    // technical detail (production). Set window.PNB_CONFIG.ENV = 'production'
+    // in config.js for real deployments.
+    const IS_PRODUCTION = !!(window.PNB_CONFIG && window.PNB_CONFIG.ENV === 'production');
+
     async function loadTranslations(lang) {
       try {
         const res = await fetch(`i18n/${lang}.json`, { cache: 'no-cache' });
@@ -1284,14 +1344,17 @@
     // call actually settles.
     function showDebugBanner(message) {
       console.error('[debug]', message);
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      // Production builds never show this raw, untranslated banner to end
+      // users — boot()'s catch shows showProductionError(code) instead.
+      if (IS_PRODUCTION) return;
       const banner = document.getElementById('debugBanner');
       const textEl = document.getElementById('debugBannerText');
       if (!banner || !textEl) return;
       textEl.textContent = textEl.textContent ? `${textEl.textContent}\n\n${message}` : message;
       banner.classList.add('show');
-      hideNativeSplash();
-      const splashEl = document.getElementById('splashOverlay');
-      if (splashEl) splashEl.style.display = 'none';
     }
 
     function wireDebugBanner() {
@@ -1299,6 +1362,31 @@
       const banner = document.getElementById('debugBanner');
       if (!closeBtn || !banner) return;
       closeBtn.addEventListener('click', () => banner.classList.remove('show'));
+    }
+
+    // Production-mode counterpart to the debug banner: a short, translated,
+    // technical-detail-free popup ("We're sorry, there was an error. {code}")
+    // so end users never see raw error messages, stack traces, or URLs (e.g.
+    // SUPABASE_URL). `code` is a stable short string identifying which check
+    // failed (see the `code` set on each thrown Error), useful for support
+    // requests without exposing internals.
+    function showProductionError(code) {
+      console.error('[production error]', code);
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      const overlay = document.getElementById('prodErrorOverlay');
+      const textEl = document.getElementById('prodErrorText');
+      if (!overlay || !textEl) return;
+      textEl.textContent = t('errorGenericProduction', { code: code || 'UNKNOWN' });
+      overlay.classList.add('show');
+    }
+
+    function wireProductionErrorOverlay() {
+      const closeBtn = document.getElementById('prodErrorClose');
+      const overlay = document.getElementById('prodErrorOverlay');
+      if (!closeBtn || !overlay) return;
+      closeBtn.addEventListener('click', () => overlay.classList.remove('show'));
     }
 
     // fetch() has no built-in timeout — against an unreachable host (e.g. a
@@ -1339,11 +1427,12 @@
         res = await fetchWithTimeout(url, { headers: supabaseHeaders() }, 10000, url);
       } catch (err) {
         showDebugBanner(`Supabase request failed:\n${url}\n\n${err.message || err}`);
+        err.code = err.code || 'SUPABASE_REQUEST_FAILED';
         throw err;
       }
       if (!res.ok) {
         showDebugBanner(`Supabase request returned HTTP ${res.status}:\n${url}`);
-        throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
+        throw Object.assign(new Error(t('errorLoadPuzzleFailed', { status: res.status })), { code: 'LOAD_PUZZLE_FAILED' });
       }
       return res.json();
     }
@@ -1379,7 +1468,7 @@
         order: 'active_from.desc',
         limit: '1',
       });
-      if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
+      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'NO_ACTIVE_PUZZLE' });
       return mapPuzzleRow(rows[0].puzzles);
     }
 
@@ -1389,7 +1478,7 @@
         id: `eq.${puzzleId}`,
         limit: '1',
       });
-      if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
+      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'PUZZLE_NOT_FOUND' });
       return mapPuzzleRow(rows[0]);
     }
 
@@ -1532,11 +1621,12 @@
         res = await fetchWithTimeout(url, { cache: 'no-cache' }, 15000, url);
       } catch (err) {
         showDebugBanner(`SVG request failed:\n${url}\n\n${err.message || err}`);
+        err.code = err.code || 'SVG_REQUEST_FAILED';
         throw err;
       }
       if (!res.ok) {
         showDebugBanner(`SVG request returned HTTP ${res.status}:\n${url}`);
-        throw new Error(t('errorLoadSvgFailed', { status: res.status, url }));
+        throw Object.assign(new Error(t('errorLoadSvgFailed', { status: res.status, url })), { code: 'LOAD_SVG_FAILED' });
       }
       const txt = await res.text();
       const parser = new DOMParser();
@@ -2816,9 +2906,15 @@
     }
 
     wireDebugBanner();
+    wireProductionErrorOverlay();
 
     boot().catch((err) => {
       console.error(err);
+      const isFile = window.location.protocol === 'file:';
+      if (IS_PRODUCTION) {
+        showProductionError(isFile ? 'FILE_PROTOCOL' : (err.code || 'BOOT_FAILED'));
+        return;
+      }
       showDebugBanner(`boot() failed: ${err.message || err}\n\nSUPABASE_URL: ${SUPABASE_URL}`);
       // #svgWrap only exists on the puzzle route (renderMenu's failures are
       // handled inline instead) — guard rather than assume it's present.
@@ -2827,7 +2923,6 @@
       svgWrap.innerHTML = '';
       const msg = document.createElement('div');
       msg.className = 'loading';
-      const isFile = window.location.protocol === 'file:';
       msg.textContent = isFile
         ? t('errorFileProtocol')
         : t('errorGeneric', { message: err.message || err });

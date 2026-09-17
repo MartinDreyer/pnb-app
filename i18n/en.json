@@ -54,5 +54,7 @@
   "errorGeneric": "Error: {{message}}",
   "errorNoActivePuzzle": "No painting is available right now. Please check back soon.",
   "errorLoadPuzzleFailed": "Failed to load active puzzle ({{status}})",
-  "errorLoadSvgFailed": "Failed to load SVG ({{status}}): {{url}}"
+  "errorLoadSvgFailed": "Failed to load SVG ({{status}}): {{url}}",
+  "errorGenericProduction": "We're sorry, there was an error. {{code}}",
+  "errorPopupCloseLabel": "OK"
 }

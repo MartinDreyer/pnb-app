@@ -54,5 +54,7 @@
   "errorGeneric": "Fejl: {{message}}",
   "errorNoActivePuzzle": "Der er ikke noget billede tilgængeligt lige nu. Prøv igen senere.",
   "errorLoadPuzzleFailed": "Kunne ikke indlæse aktivt billede ({{status}})",
-  "errorLoadSvgFailed": "Kunne ikke indlæse SVG ({{status}}): {{url}}"
+  "errorLoadSvgFailed": "Kunne ikke indlæse SVG ({{status}}): {{url}}",
+  "errorGenericProduction": "Vi beklager, der opstod en fejl. {{code}}",
+  "errorPopupCloseLabel": "OK"
 }
