@@ -33,7 +33,28 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Make the puzzle-prep cadence configurable (any day interval, not just a fixed daily/weekly split) via the new Settings panel
 - [x] Fix the confusing admin schedule table (ambiguous dates, no past/active/upcoming indication) and add "Paintings" (used/available) and "Prepared but not used" overview tables
 
+## Done (2026-09-15)
+
+- [x] Show a plain short date ("14. sep") instead of "Week of .../Uge ..." on the menu/archive history cards
+- [x] Clear all existing paintings/puzzles/rotation-schedule data (DB rows + storage objects) and generate 5 fresh weekly puzzles
+- [x] Fix the painting canvas rendering undersized on cold launch (fixed itself on rotate) by switching `--palette-h` from plain `vh` to `dvh`, same fix already applied to `.app`'s height
+- [x] Replace the "14. sep"-style date on history/archive cards with a stable release-order number ("#1", "#2", ...) and add "a new painting is added every week" info copy in its place
+- [x] Replace the Archive's month-by-month browsing with one flat numbered grid
+- [x] Grow the prepared puzzle backlog from 5 to 20 via the generator backend
+- [x] Make the cheat swatch always leave one region unpainted instead of finishing the puzzle
+- [x] Remove the trivia panel's guess-the-title/artist mini-game; show title/artist directly on completion
+- [x] Reword the "no active puzzle" error so it doesn't reference the admin control panel (real end users never see it)
+- [x] Backdate the 20-puzzle backlog so #1-19 are usable now as history/archive baseline and #20 is today's puzzle, with the weekly schedule continuing from #21
+- [x] Make the menu's history strip wrap into several rows on iPad-sized screens instead of a single horizontally-scrolling band
+- [x] Fix `.app` rendering at a stale, too-narrow width in portrait mode after a menu-to-puzzle navigation (gave `width` the same `--app-vw`/`100dvw` treatment `height` already had)
+- [x] Add an optional AI-researched (web search) blurb about each painting/painter, shown on completion with an AI-disclaimer; wired into puzzle generation so it runs once per new painting
+- [x] Add the missing `paintings.used_at` migration (schema-drift gap found while adding the above)
+
 ## Next up
+
+- [ ] Fix `runDailyPreparation`/`/api/generate` crashing (`StorageApiError`, 413) when a chosen SMK painting's `image_native` exceeds the `puzzles` bucket's 50MiB limit (hit a real 413MB download on 2026-09-15) — either downscale the reference image before upload, raise the bucket limit, or skip oversized artworks up front
+- [ ] Set `ANTHROPIC_API_KEY` in `paintbynumbersgenerator-master/backend/.env` to actually activate the AI painting-blurb enrichment (wired in but inactive without it — see `src/enrichment.ts`)
+- [ ] Backfill `ai_summary` for the current 20 prepared puzzles once a key is set — they were generated before the enrichment wiring landed, so none have a blurb yet; only #21 onward will pick it up automatically
 
 - [ ] Refresh Android's `mipmap-*/ic_launcher*.png` launcher icons (still the default Capacitor placeholder)
 - [ ] Enroll in the paid Apple Developer Program so the app can actually be uploaded to TestFlight
@@ -42,3 +63,9 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [ ] Build a leaderboard ranking guesses by how early/correct they were
 - [ ] Switch control-panel SMK browsing (search/random candidate lists) to `image_thumbnail` instead of `image_native`; keep `image_native` only for the painting actually chosen for generation
 - [ ] Move puzzle-prep scheduling off the Node process's `setInterval` onto a real cron/scheduler, so it runs reliably regardless of whether the control panel server is up
+
+## Done (2026-09-17)
+
+- [x] Add a `pnb-app` develop/production mode toggle (`window.PNB_CONFIG.ENV` in `config.js`) so production shows a translated, detail-free "something went wrong" popup with an error code instead of the technical debug banner/raw error message
+- [x] Write `IPAD_QA_CHECKLIST.md`, a manual iPad production-readiness checklist
+- [x] Add opt-in (`?perf=1`) boot performance instrumentation to `index.html` plus `PERFORMANCE.md`/`perf/BENCHMARKS.csv` for tracking benchmark runs over time

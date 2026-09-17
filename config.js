@@ -3,14 +3,27 @@
 // safe to ship in client JS — swap SUPABASE_URL/SUPABASE_ANON_KEY per environment when
 // deploying against a hosted Supabase project instead of the local stack.
 //
-// SUPABASE_URL uses the dev machine's LAN IP (not 127.0.0.1) so phones/tablets on the
-// same Wi-Fi can reach it too — still works from the dev machine itself either way.
-// This IP changes if the machine switches networks; update it if the app stops loading.
+// SUPABASE_URL uses the dev machine's Bonjour/mDNS hostname (`<name>.local`, from
+// System Settings > General > Sharing > Local hostname, or `scutil --get LocalHostName`)
+// instead of its LAN IP, so phones/tablets on the same Wi-Fi can still reach it after the
+// machine's IP changes (a plain IP goes stale on every network switch — that's what was
+// breaking the iPad build). Still works from the dev machine itself either way. This is a
+// dev-only convenience: once there's a real deployed Supabase project, point this at its
+// permanent URL instead.
 // LANG selects which i18n/<lang>.json file the UI loads (defaults to 'da' if
 // unset). Add a new language by dropping in i18n/<lang>.json with the same
 // keys as i18n/da.json, then set LANG here (or leave unset for Danish).
+//
+// ENV controls how startup failures are surfaced: 'development' (default)
+// shows the raw technical debug banner + detailed error text, which is what
+// you want while working on this app or diagnosing a broken local Supabase
+// stack. Set ENV: 'production' for real deployments so a failure instead
+// shows a short, translated "something went wrong" popup with an error code,
+// with no technical detail or URLs exposed to end users.
 window.PNB_CONFIG = {
-  SUPABASE_URL: 'http://192.168.87.86:54331',
+  SUPABASE_URL: 'http://MacBook-Pro.local:54331',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
   // LANG: 'en',
+  ENV: 'development',
+  // ENV: 'production',
 };

@@ -10,8 +10,14 @@
       --target-w: 1620;
       --target-h: 2160;
       --topbar-h: 64px;
-      /* Floating palette height */
+      /* Floating palette height. Plain vh suffers the same iPad Safari/
+         WKWebView bug described on .app below (keeps the pre-rotation
+         value after a portrait<->landscape switch, understating the
+         painting's available height until something forces a relayout) —
+         the dvh override the line below fixes it the same way .app's
+         height does. */
       --palette-h: clamp(220px, 22vh, 360px);
+      --palette-h: clamp(220px, 22dvh, 360px);
       --bg: #FFFFFF;
       --panel: #FFFFFF;
       --panel2: #FFFFFF;
@@ -35,8 +41,21 @@
     }
 
     .app {
-      height: 100vh;
-      width: 100vw;
+      /* iPad Safari/WKWebView sometimes keeps a stale pre-layout 100vh/100vw
+         value right after a fresh page load (this app navigates menu<->
+         puzzle via location.reload(), so this happens on every navigation,
+         not just cold launch) — the real viewport isn't reflected until
+         something forces a relayout, e.g. rotating the device. Same bug on
+         both axes: a stale height leaves a white gap below the app shell, a
+         stale (too narrow) width leaves blank space beside it. --app-vh/
+         --app-vw are kept in sync with the real innerHeight/innerWidth via
+         JS (see wireViewportSizeSync) as the primary fix; 100dvh/100dvw
+         are layered on top for browsers new enough to compute them
+         correctly on their own. */
+      height: calc(var(--app-vh, 1vh) * 100);
+      height: 100dvh;
+      width: calc(var(--app-vw, 1vw) * 100);
+      width: 100dvw;
       position: relative;
     }
 
@@ -98,6 +117,7 @@
       background: var(--canvas-bg);
       position: absolute;
       inset: 0;
+      z-index: 0;
       padding-top: var(--topbar-h);
       /* Reserve space so the painting still fits in visible area */
       padding-bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px));
@@ -105,6 +125,25 @@
       overflow: hidden;
       display: grid;
       place-items: center;
+    }
+
+    /* Same soft colorful blobs as the menu (see .menuOverlay::before), toned
+       down further since this sits behind the actual artwork: low enough
+       opacity that it livens up the matte --canvas-bg without competing
+       with the painting's contrast. Painted behind .svgWrap via negative
+       z-index (requires .canvas's z-index:0 above to form a stacking
+       context to paint into). */
+    .canvas::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.28), rgba(110,168,255,0) 70%),
+        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.25), rgba(240,180,41,0) 70%),
+        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.25), rgba(95,180,136,0) 70%),
+        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.25), rgba(217,142,95,0) 70%);
     }
 
     .svgWrap {
@@ -416,6 +455,102 @@
       display: block;
     }
 
+    /* Temporary debug aid (see showDebugBanner): surfaces network/loading
+       failures that would otherwise fail silently behind the splash screen
+       (e.g. config.js's SUPABASE_URL pointing at a stale LAN IP). Deliberately
+       untranslated and technical (raw error + URL) rather than a polished
+       user-facing message — this is for diagnosing setup issues during
+       development, not the end-user error copy (that's errorGeneric/
+       errorNoActivePuzzle etc., shown separately). Above everything,
+       including the splash screen, so it's visible even if boot never
+       finishes. */
+    .debugBanner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: #b3261e;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 36px 10px 12px;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none;
+      max-height: 50vh;
+      overflow-y: auto;
+    }
+
+    .debugBanner.show {
+      display: block;
+    }
+
+    .debugBannerClose {
+      position: absolute;
+      top: calc(6px + env(safe-area-inset-top, 0px));
+      right: 8px;
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    /* Production-mode counterpart to .debugBanner (see showProductionError):
+       a plain, translated "something went wrong" popup with no technical
+       detail, shown instead of the debug banner when
+       window.PNB_CONFIG.ENV === 'production'. Above everything, including
+       the splash screen, same as .debugBanner. */
+    .prodErrorOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.5);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .prodErrorOverlay.show {
+      display: flex;
+    }
+
+    .prodErrorBox {
+      background: #fff;
+      color: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 320px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .prodErrorBox #prodErrorText {
+      font-size: 15px;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .prodErrorClose {
+      border: none;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 14px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+
     /* Zoom affordance: one-time animated hint + persistent controls */
     .zoomHint {
       position: fixed;
@@ -717,7 +852,14 @@
       font-size: 14px;
       font-weight: 650;
       color: var(--muted);
-      margin: 24px 0 10px;
+      margin: 24px 0 0;
+    }
+
+    .menuHistorySubtitle {
+      font-size: 12px;
+      color: var(--muted);
+      opacity: 0.8;
+      margin: 2px 0 10px;
     }
 
     .menuHistoryStrip {
@@ -729,6 +871,23 @@
       padding: 2px 2px 10px;
       margin: 0 -2px;
       -webkit-overflow-scrolling: touch;
+    }
+
+    /* On a screen wide enough to fit several cards per row (iPad and up), a
+       single horizontally-scrolling band wastes most of the screen's width
+       and height. Switch to a wrapping grid of several bands instead — same
+       cards, same click targets, just laid out to use the extra room. */
+    @media (min-width: 700px) {
+      .menuHistoryStrip {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        overflow-x: visible;
+        overflow-y: visible;
+      }
+
+      .menuHistoryStrip .menuHistoryItem {
+        width: 100%;
+      }
     }
 
     .menuHistoryItem {
@@ -762,7 +921,7 @@
       font-size: 22px;
     }
 
-    .menuHistoryDate {
+    .menuHistoryNumber {
       font-size: 12px;
       font-weight: 650;
     }
@@ -795,9 +954,9 @@
       transform: translateY(1px);
     }
 
-    /* Archive overlay: month-by-month browse of older weeks. Same layering
-       approach as .menuOverlay (fixed, above everything but below nothing
-       since it's only ever opened from the menu). */
+    /* Archive overlay: a flat grid of every past, numbered puzzle. Same
+       layering approach as .menuOverlay (fixed, above everything but below
+       nothing since it's only ever opened from the menu). */
     .archiveOverlay {
       position: fixed;
       inset: 0;
@@ -845,39 +1004,8 @@
       touch-action: manipulation;
     }
 
-    .archiveMonthNav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-
-    .archiveNavBtn {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      color: inherit;
-      font-size: 17px;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .archiveNavBtn:disabled {
-      opacity: 0.35;
-      cursor: default;
-    }
-
-    .archiveMonthLabel {
-      min-width: 160px;
-      text-align: center;
-      font-weight: 650;
-      font-size: 15px;
-    }
-
     .archiveGrid {
+      margin-top: 18px;
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 10px;
@@ -957,58 +1085,6 @@
       margin: 0 28px 2px 0;
     }
 
-    .triviaGuess {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin: 4px 28px 12px 0;
-    }
-
-    .triviaGuessPrompt {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .triviaGuessInput {
-      font: inherit;
-      font-size: 13px;
-      padding: 8px 10px;
-      border: 1px solid var(--stroke);
-      border-radius: 10px;
-      box-sizing: border-box;
-      width: 100%;
-    }
-
-    .triviaRevealBtn {
-      align-self: flex-start;
-      font-size: 13px;
-      font-weight: 650;
-      color: #fff;
-      background: var(--accent);
-      border: none;
-      border-radius: 999px;
-      padding: 8px 16px;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-
-    .triviaRevealBtn:active {
-      transform: translateY(1px);
-    }
-
-    .triviaGuessLine {
-      font-size: 12px;
-      margin-top: 2px;
-    }
-
-    .triviaGuessLine.correct {
-      color: #2a9d8f;
-    }
-
-    .triviaGuessLine.incorrect {
-      color: var(--muted);
-    }
-
     .triviaArtist {
       font-size: 13px;
       color: var(--muted);
@@ -1043,6 +1119,23 @@
       color: var(--text);
     }
 
+    .triviaAiBlurb {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin: 0 0 12px;
+    }
+
+    .triviaAiDisclaimer {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
     .triviaLoading {
       font-size: 13px;
       color: var(--muted);
@@ -1051,6 +1144,16 @@
 </head>
 <body>
   <div class="app">
+    <div class="debugBanner" id="debugBanner">
+      <button class="debugBannerClose" id="debugBannerClose" type="button" aria-label="Close">&times;</button>
+      <div id="debugBannerText"></div>
+    </div>
+    <div class="prodErrorOverlay" id="prodErrorOverlay">
+      <div class="prodErrorBox">
+        <div id="prodErrorText"></div>
+        <button class="prodErrorClose" id="prodErrorClose" type="button" data-i18n="errorPopupCloseLabel"></button>
+      </div>
+    </div>
     <div class="splashOverlay" id="splashOverlay">
       <div class="splashMark">
         <div class="splashSwatch"></div>
@@ -1079,6 +1182,7 @@
         </div>
       </button>
       <h2 class="menuHistoryTitle" data-i18n="menuHistoryTitle"></h2>
+      <div class="menuHistorySubtitle" data-i18n="menuHistorySubtitle"></div>
       <div class="menuHistoryStrip" id="menuHistoryStrip"></div>
       <button type="button" class="menuArchiveBtn" id="menuArchiveBtn" data-i18n="menuArchiveButton"></button>
     </div>
@@ -1090,11 +1194,6 @@
           <div class="archiveSubtitle" data-i18n="archiveSubtitle"></div>
         </div>
         <button type="button" class="archiveCloseBtn" id="archiveCloseBtn" data-i18n-aria="archiveCloseLabel">✕</button>
-      </div>
-      <div class="archiveMonthNav">
-        <button type="button" class="archiveNavBtn" id="archivePrevBtn" data-i18n-aria="archivePrevLabel">‹</button>
-        <div class="archiveMonthLabel" id="archiveMonthLabel"></div>
-        <button type="button" class="archiveNavBtn" id="archiveNextBtn" data-i18n-aria="archiveNextLabel">›</button>
       </div>
       <div class="archiveGrid" id="archiveGrid"></div>
     </div>
@@ -1158,6 +1257,12 @@
     const FALLBACK_LANG = 'da';
     let I18N = {};
 
+    // Toggle between the technical debug banner (development, the default)
+    // and a short, translated "something went wrong" popup with no
+    // technical detail (production). Set window.PNB_CONFIG.ENV = 'production'
+    // in config.js for real deployments.
+    const IS_PRODUCTION = !!(window.PNB_CONFIG && window.PNB_CONFIG.ENV === 'production');
+
     async function loadTranslations(lang) {
       try {
         const res = await fetch(`i18n/${lang}.json`, { cache: 'no-cache' });
@@ -1202,6 +1307,24 @@
     // a longer language) and viewport width. .canvas/.fitWarning read this
     // var to offset around the topbar, so a hardcoded height would either
     // truncate text or let it overlap the canvas depending on language.
+    // Keeps --app-vh/--app-vw (1% of the real viewport height/width) in sync
+    // so .app's size doesn't get stuck at a stale value across a navigation
+    // or orientation change (see the comment on .app). Listens on resize,
+    // orientationchange, and visualViewport's resize (fires slightly ahead
+    // of window resize on iOS and catches on-screen-keyboard changes too).
+    function wireViewportSizeSync() {
+      const sync = () => {
+        document.documentElement.style.setProperty('--app-vh', `${window.innerHeight * 0.01}px`);
+        document.documentElement.style.setProperty('--app-vw', `${window.innerWidth * 0.01}px`);
+      };
+      sync();
+      window.addEventListener('resize', sync);
+      window.addEventListener('orientationchange', sync);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', sync);
+      }
+    }
+
     function wireTopbarHeightSync() {
       const topbar = document.querySelector('.topbar');
       if (!topbar || typeof ResizeObserver === 'undefined') return;
@@ -1210,6 +1333,80 @@
       };
       new ResizeObserver(sync).observe(topbar);
       sync();
+    }
+
+    // Shows a technical, untranslated debug banner across the top of the
+    // screen — see the .debugBanner CSS comment for why this exists and why
+    // it's deliberately not the polished i18n'd error copy. Also force-hides
+    // both splash screens: a hung/failed network call otherwise leaves the
+    // user staring at the splash animation forever, since the code that
+    // normally hides it (boot()'s `finally`) only runs once the awaited
+    // call actually settles.
+    function showDebugBanner(message) {
+      console.error('[debug]', message);
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      // Production builds never show this raw, untranslated banner to end
+      // users — boot()'s catch shows showProductionError(code) instead.
+      if (IS_PRODUCTION) return;
+      const banner = document.getElementById('debugBanner');
+      const textEl = document.getElementById('debugBannerText');
+      if (!banner || !textEl) return;
+      textEl.textContent = textEl.textContent ? `${textEl.textContent}\n\n${message}` : message;
+      banner.classList.add('show');
+    }
+
+    function wireDebugBanner() {
+      const closeBtn = document.getElementById('debugBannerClose');
+      const banner = document.getElementById('debugBanner');
+      if (!closeBtn || !banner) return;
+      closeBtn.addEventListener('click', () => banner.classList.remove('show'));
+    }
+
+    // Production-mode counterpart to the debug banner: a short, translated,
+    // technical-detail-free popup ("We're sorry, there was an error. {code}")
+    // so end users never see raw error messages, stack traces, or URLs (e.g.
+    // SUPABASE_URL). `code` is a stable short string identifying which check
+    // failed (see the `code` set on each thrown Error), useful for support
+    // requests without exposing internals.
+    function showProductionError(code) {
+      console.error('[production error]', code);
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      const overlay = document.getElementById('prodErrorOverlay');
+      const textEl = document.getElementById('prodErrorText');
+      if (!overlay || !textEl) return;
+      textEl.textContent = t('errorGenericProduction', { code: code || 'UNKNOWN' });
+      overlay.classList.add('show');
+    }
+
+    function wireProductionErrorOverlay() {
+      const closeBtn = document.getElementById('prodErrorClose');
+      const overlay = document.getElementById('prodErrorOverlay');
+      if (!closeBtn || !overlay) return;
+      closeBtn.addEventListener('click', () => overlay.classList.remove('show'));
+    }
+
+    // fetch() has no built-in timeout — against an unreachable host (e.g. a
+    // stale LAN IP in config.js after switching networks) it can hang far
+    // longer than a user will wait, which reads as "stuck on the splash
+    // screen" with no indication why. This fails fast instead, with an
+    // error message that names the URL so a bad SUPABASE_URL is obvious.
+    async function fetchWithTimeout(url, options, timeoutMs, label) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error(`Timed out after ${(timeoutMs / 1000).toFixed(0)}s contacting ${label || url}`);
+        }
+        throw new Error(`Network request failed for ${label || url}: ${err.message || err}`);
+      } finally {
+        clearTimeout(timer);
+      }
     }
 
     function storagePublicUrl(path) {
@@ -1224,10 +1421,19 @@
     }
 
     async function supabaseSelect(table, params) {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${new URLSearchParams(params).toString()}`, {
-        headers: supabaseHeaders(),
-      });
-      if (!res.ok) throw new Error(t('errorLoadPuzzleFailed', { status: res.status }));
+      const url = `${SUPABASE_URL}/rest/v1/${table}?${new URLSearchParams(params).toString()}`;
+      let res;
+      try {
+        res = await fetchWithTimeout(url, { headers: supabaseHeaders() }, 10000, url);
+      } catch (err) {
+        showDebugBanner(`Supabase request failed:\n${url}\n\n${err.message || err}`);
+        err.code = err.code || 'SUPABASE_REQUEST_FAILED';
+        throw err;
+      }
+      if (!res.ok) {
+        showDebugBanner(`Supabase request returned HTTP ${res.status}:\n${url}`);
+        throw Object.assign(new Error(t('errorLoadPuzzleFailed', { status: res.status })), { code: 'LOAD_PUZZLE_FAILED' });
+      }
       return res.json();
     }
 
@@ -1240,10 +1446,15 @@
         title: puzzlesRow.paintings ? puzzlesRow.paintings.title : '',
         artist: puzzlesRow.paintings ? puzzlesRow.paintings.artist : '',
         smkObjectNumber: puzzlesRow.paintings ? puzzlesRow.paintings.smk_object_number : '',
+        // Set only when the generator backend's optional AI-enrichment step (web
+        // search + LLM, see paintbynumbersgenerator-master/backend/src/enrichment.ts)
+        // ran successfully for this painting — null/absent just means the trivia panel
+        // skips that section (see renderTriviaPanel).
+        aiSummary: puzzlesRow.paintings ? puzzlesRow.paintings.ai_summary : null,
       };
     }
 
-    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number)';
+    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number,ai_summary)';
 
     // The "current puzzle" is whichever rotation_schedule row's active_from/active_until
     // window contains right now (see pnb-database's schema docs). RLS on the anon key
@@ -1257,7 +1468,7 @@
         order: 'active_from.desc',
         limit: '1',
       });
-      if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
+      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'NO_ACTIVE_PUZZLE' });
       return mapPuzzleRow(rows[0].puzzles);
     }
 
@@ -1267,39 +1478,51 @@
         id: `eq.${puzzleId}`,
         limit: '1',
       });
-      if (!rows.length) throw new Error(t('errorNoActivePuzzle'));
+      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'PUZZLE_NOT_FOUND' });
       return mapPuzzleRow(rows[0]);
     }
 
-    // Past weeks, newest first. Deliberately doesn't select the painting's
-    // title/artist: history rows are labeled by date only, so browsing the list
-    // itself doesn't spoil a puzzle before it's opened.
-    async function fetchPuzzleHistory(limit) {
-      const nowIso = new Date().toISOString();
+    // Past puzzles, newest first, each labeled by its release order ("#N")
+    // rather than its date. Deliberately doesn't select the painting's
+    // title/artist: history rows are labeled by number only, so browsing the
+    // list itself doesn't spoil a puzzle before it's opened.
+    //
+    // A puzzle's number is its 1-based position in the *entire* rotation
+    // schedule ordered by active_from ascending (#1 = the very first puzzle
+    // ever scheduled), so it stays stable as new puzzles get appended to the
+    // end every week — it's computed from position, not stored, so this always
+    // fetches the full schedule (including not-yet-active future rows, which
+    // are then filtered out below) rather than just the "limit" requested.
+    async function fetchNumberedPuzzleHistory() {
       const rows = await supabaseSelect('rotation_schedule', {
-        select: 'id,active_from,active_until,puzzles(id,reference_png_storage_path)',
-        active_until: `lte.${nowIso}`,
-        order: 'active_from.desc',
-        limit: String(limit),
+        select: 'id,active_until,puzzles(id,reference_png_storage_path)',
+        order: 'active_from.asc',
+        limit: '1000',
       });
-      return rows.map((row) => ({
+      const nowIso = new Date().toISOString();
+      const numbered = rows.map((row, i) => ({
         puzzleId: row.puzzles.id,
-        activeFrom: row.active_from,
+        number: i + 1,
+        activeUntil: row.active_until,
         referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
       }));
+      return numbered.filter((row) => row.activeUntil <= nowIso).reverse();
     }
 
-    // The short strip on the menu only needs a handful of recent weeks.
-    function fetchRecentPuzzleHistory() {
-      return fetchPuzzleHistory(8);
+    // The menu's history strip: on a narrow phone screen this is one
+    // horizontally-scrolling row, so a handful is plenty — but on a wider
+    // screen (see the .menuHistoryStrip media query) it wraps into several
+    // rows, so a larger recent-history slice actually fills the space
+    // instead of leaving it mostly empty. The full history is always one tap
+    // away via the Archive regardless.
+    async function fetchRecentPuzzleHistory() {
+      return (await fetchNumberedPuzzleHistory()).slice(0, 20);
     }
 
-    // The full archive, for the month-browsable view — a generous cap (10
-    // years of weekly puzzles) rather than true pagination, since at that
-    // scale fetching it all once and grouping client-side by month is simpler
-    // than paginating server-side per month.
+    // The full archive: every past puzzle, flat (no date-based grouping —
+    // puzzles are numbered, not dated, so there's nothing to group by).
     function fetchPuzzleArchive() {
-      return fetchPuzzleHistory(520);
+      return fetchNumberedPuzzleHistory();
     }
 
     // Per-puzzle painting progress, kept client-side only (no user accounts).
@@ -1393,8 +1616,18 @@
     }
 
     async function loadSvg(url) {
-      const res = await fetch(url, { cache: 'no-cache' });
-      if (!res.ok) throw new Error(t('errorLoadSvgFailed', { status: res.status, url }));
+      let res;
+      try {
+        res = await fetchWithTimeout(url, { cache: 'no-cache' }, 15000, url);
+      } catch (err) {
+        showDebugBanner(`SVG request failed:\n${url}\n\n${err.message || err}`);
+        err.code = err.code || 'SVG_REQUEST_FAILED';
+        throw err;
+      }
+      if (!res.ok) {
+        showDebugBanner(`SVG request returned HTTP ${res.status}:\n${url}`);
+        throw Object.assign(new Error(t('errorLoadSvgFailed', { status: res.status, url })), { code: 'LOAD_SVG_FAILED' });
+      }
       const txt = await res.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(txt, 'image/svg+xml');
@@ -2051,14 +2284,6 @@
       return { year, period, style, medium, funFact, wikidataUrl };
     }
 
-    // Compares a guess to the real answer leniently (trimmed, case/diacritic
-    // insensitive) — good enough for a fun self-check, not meant to catch typos.
-    function guessMatches(guess, answer) {
-      if (!guess || !answer) return false;
-      const normalize = (s) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-      return normalize(guess) === normalize(answer);
-    }
-
     function renderTriviaPanel(svgWrap, puzzle) {
       const panel = document.createElement('div');
       panel.className = 'triviaPanel';
@@ -2073,9 +2298,11 @@
 
       const title = document.createElement('div');
       title.className = 'triviaTitle';
+      title.textContent = puzzle.title || t('triviaUntitled');
 
       const artist = document.createElement('div');
       artist.className = 'triviaArtist';
+      artist.textContent = puzzle.artist || '';
 
       const loading = document.createElement('div');
       loading.className = 'triviaLoading';
@@ -2085,12 +2312,28 @@
       panel.appendChild(title);
       panel.appendChild(artist);
 
-      // Guess-before-you-peek: title/artist and the trivia details below both
-      // stay hidden until the user reveals them (with or without guessing
-      // first), so a fast trivia-API response can't spoil the answer early.
-      let revealed = false;
-      let pendingTrivia = null;
-      let pendingError = false;
+      // AI-researched blurb: generated once server-side when the painting was first
+      // pulled (see paintbynumbersgenerator-master/backend/src/enrichment.ts), stored
+      // on the painting row — no network call needed here, and no "loading" state,
+      // unlike the trivia fetch below. Always paired with a disclaimer, since it can
+      // be wrong.
+      if (puzzle.aiSummary) {
+        const aiBlurb = document.createElement('div');
+        aiBlurb.className = 'triviaAiBlurb';
+
+        const aiText = document.createElement('div');
+        aiText.textContent = puzzle.aiSummary;
+        aiBlurb.appendChild(aiText);
+
+        const aiDisclaimer = document.createElement('div');
+        aiDisclaimer.className = 'triviaAiDisclaimer';
+        aiDisclaimer.textContent = t('triviaAiDisclaimer');
+        aiBlurb.appendChild(aiDisclaimer);
+
+        panel.appendChild(aiBlurb);
+      }
+
+      panel.appendChild(loading);
 
       function renderTriviaDetails(trivia) {
         loading.remove();
@@ -2132,83 +2375,15 @@
         }
       }
 
-      function guessLine(guess, answer) {
-        const line = document.createElement('div');
-        const correct = guessMatches(guess, answer);
-        line.className = `triviaGuessLine ${correct ? 'correct' : 'incorrect'}`;
-        line.textContent = `${t('triviaYourGuess', { guess })} — ${t(correct ? 'triviaGuessCorrect' : 'triviaGuessIncorrect')}`;
-        return line;
-      }
-
-      function reveal(titleGuess, artistGuess) {
-        if (revealed) return;
-        revealed = true;
-        guessForm.remove();
-
-        title.textContent = puzzle.title || t('triviaUntitled');
-        if (titleGuess) title.appendChild(guessLine(titleGuess, puzzle.title));
-
-        artist.textContent = puzzle.artist || '';
-        if (artistGuess) artist.appendChild(guessLine(artistGuess, puzzle.artist));
-
-        panel.appendChild(loading);
-        if (pendingTrivia) {
-          renderTriviaDetails(pendingTrivia);
-        } else if (pendingError) {
-          loading.textContent = t('triviaError');
-        }
-      }
-
-      const guessForm = document.createElement('div');
-      guessForm.className = 'triviaGuess';
-
-      const prompt = document.createElement('div');
-      prompt.className = 'triviaGuessPrompt';
-      prompt.textContent = t('triviaGuessPrompt');
-
-      const titleInput = document.createElement('input');
-      titleInput.className = 'triviaGuessInput';
-      titleInput.type = 'text';
-      titleInput.placeholder = t('triviaGuessTitlePlaceholder');
-
-      const artistInput = document.createElement('input');
-      artistInput.className = 'triviaGuessInput';
-      artistInput.type = 'text';
-      artistInput.placeholder = t('triviaGuessArtistPlaceholder');
-
-      const revealBtn = document.createElement('button');
-      revealBtn.type = 'button';
-      revealBtn.className = 'triviaRevealBtn';
-      revealBtn.textContent = t('triviaRevealButton');
-      const doReveal = () => reveal(titleInput.value, artistInput.value);
-      revealBtn.addEventListener('click', doReveal);
-      const revealOnEnter = (e) => { if (e.key === 'Enter') doReveal(); };
-      titleInput.addEventListener('keydown', revealOnEnter);
-      artistInput.addEventListener('keydown', revealOnEnter);
-
-      guessForm.appendChild(prompt);
-      guessForm.appendChild(titleInput);
-      guessForm.appendChild(artistInput);
-      guessForm.appendChild(revealBtn);
-      panel.appendChild(guessForm);
-
       svgWrap.appendChild(panel);
 
       requestAnimationFrame(() => panel.classList.add('show'));
 
       fetchPaintingTrivia(puzzle.smkObjectNumber, puzzle.title, puzzle.artist).then((trivia) => {
-        if (revealed) {
-          renderTriviaDetails(trivia);
-        } else {
-          pendingTrivia = trivia;
-        }
+        renderTriviaDetails(trivia);
       }).catch((err) => {
         console.error(err);
-        if (revealed) {
-          loading.textContent = t('triviaError');
-        } else {
-          pendingError = true;
-        }
+        loading.textContent = t('triviaError');
       });
     }
 
@@ -2248,7 +2423,8 @@
 
       loading.textContent = t('loadingPuzzle');
       // Deliberately not shown until completion (see the trivia panel) —
-      // the painting's title/artist would spoil the guessing game.
+      // the painting's title/artist would spoil the surprise of seeing what
+      // you've been painting.
 
       const palette = puzzle.palette;
       const counterByNum = buildSwatches(palette);
@@ -2387,7 +2563,9 @@
         if (paletteEl) paletteEl.style.display = '';
 
         const svg = await loadSvg(svgUrl);
+        pnbMark('pnb:svg-loaded');
         const annotated = annotateSvg(svg, palette);
+        pnbMark('pnb:svg-annotated');
         svgWrap.innerHTML = '';
         svgWrap.appendChild(annotated);
 
@@ -2443,10 +2621,14 @@
           onCorrectPaint(p);
         }
 
-        // Cheat: paint everything correctly at once (only unpainted regions count)
+        // Cheat: paint every unpainted region except one, always leaving at
+        // least one region for the user to paint themselves — so cheating
+        // never finishes the puzzle outright, no matter how many times it's
+        // pressed.
         cheatFn = () => {
-          for (const p of paintable) {
-            if (p.dataset.painted === '1') continue;
+          const unpainted = paintable.filter((p) => p.dataset.painted !== '1');
+          unpainted.pop();
+          for (const p of unpainted) {
             const fill = p.dataset.correctFill;
             if (fill) p.style.fill = fill;
             p.dataset.painted = '1';
@@ -2463,6 +2645,8 @@
             // Now wire pan/zoom + tap-to-paint on the fitted SVG
             panzoomCtl = wireCanvasInteractions(annotated, svgWrap, paletteSelection, onCorrectPaint);
             checkFitsWithinWrap(annotated, svgWrap);
+            pnbMark('pnb:interactive');
+            reportPerf();
           });
         });
         window.addEventListener('resize', () => checkFitsWithinWrap(annotated, svgWrap));
@@ -2489,11 +2673,6 @@
       location.reload();
     }
 
-    function formatWeekDate(iso) {
-      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
-      return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
-    }
-
     function menuStatusLabel(progress) {
       if (progress.completed) return t('menuStatusCompleted');
       if (progress.painted.length > 0) return t('menuStatusInProgress');
@@ -2513,7 +2692,8 @@
     }
 
     // Shared by the menu's horizontal strip and the archive grid — a button
-    // card for one past week's puzzle.
+    // card for one past puzzle. Labeled by its release order ("#N"), not its
+    // date — see fetchNumberedPuzzleHistory.
     function buildHistoryCard(row) {
       const progress = getPuzzleProgress(row.puzzleId);
       const item = document.createElement('button');
@@ -2524,15 +2704,15 @@
       thumb.className = 'menuThumb';
       setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
 
-      const date = document.createElement('div');
-      date.className = 'menuHistoryDate';
-      date.textContent = t('menuWeekOf', { date: formatWeekDate(row.activeFrom) });
+      const number = document.createElement('div');
+      number.className = 'menuHistoryNumber';
+      number.textContent = t('menuPuzzleNumber', { num: row.number });
       const status = document.createElement('div');
       status.className = 'menuStatus';
       status.textContent = menuStatusLabel(progress);
 
       item.appendChild(thumb);
-      item.appendChild(date);
+      item.appendChild(number);
       item.appendChild(status);
       item.addEventListener('click', () => goToPuzzle(row.puzzleId));
       return item;
@@ -2580,49 +2760,16 @@
       wireArchive();
     }
 
-    // Archive state: fetched once (lazily, on first open) and grouped by
-    // "YYYY-MM" (in the puzzle's own local time zone) so month navigation is
-    // just filtering an already-fetched array, no repeat network round trips.
-    let archiveRowsByMonth = null;
-    let archiveMonthKeys = [];
-    let archiveMonthIndex = 0;
+    // Archive state: fetched once, lazily, on first open — a flat, numbered
+    // list (no date-based grouping), so opening it again just re-renders the
+    // already-fetched array with no repeat network round trip.
+    let archiveRows = null;
 
-    function monthKey(iso) {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    }
-
-    function monthLabel(key) {
-      const [year, month] = key.split('-').map(Number);
-      const locale = LANG === 'da' ? 'da-DK' : 'en-US';
-      return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
-    }
-
-    async function loadArchiveData() {
-      if (archiveRowsByMonth) return;
-      const rows = await fetchPuzzleArchive();
-      archiveRowsByMonth = new Map();
-      for (const row of rows) {
-        const key = monthKey(row.activeFrom);
-        if (!archiveRowsByMonth.has(key)) archiveRowsByMonth.set(key, []);
-        archiveRowsByMonth.get(key).push(row);
-      }
-      // Oldest first, so "next" moves forward in time.
-      archiveMonthKeys = Array.from(archiveRowsByMonth.keys()).sort();
-      archiveMonthIndex = archiveMonthKeys.length - 1;
-    }
-
-    function renderArchiveMonth() {
+    function renderArchiveGrid() {
       const grid = document.getElementById('archiveGrid');
-      const label = document.getElementById('archiveMonthLabel');
-      const prevBtn = document.getElementById('archivePrevBtn');
-      const nextBtn = document.getElementById('archiveNextBtn');
       grid.innerHTML = '';
 
-      if (!archiveMonthKeys.length) {
-        label.textContent = '';
-        prevBtn.disabled = true;
-        nextBtn.disabled = true;
+      if (!archiveRows.length) {
         const empty = document.createElement('div');
         empty.className = 'archiveEmpty';
         empty.textContent = t('archiveEmpty');
@@ -2630,23 +2777,19 @@
         return;
       }
 
-      const key = archiveMonthKeys[archiveMonthIndex];
-      label.textContent = monthLabel(key);
-      prevBtn.disabled = archiveMonthIndex <= 0;
-      nextBtn.disabled = archiveMonthIndex >= archiveMonthKeys.length - 1;
-
-      const rows = archiveRowsByMonth.get(key) || [];
-      for (const row of rows) {
+      for (const row of archiveRows) {
         grid.appendChild(buildHistoryCard(row));
       }
     }
 
     async function openArchive() {
       document.getElementById('archiveOverlay').classList.add('show');
-      const label = document.getElementById('archiveMonthLabel');
-      label.textContent = t('loading');
-      await loadArchiveData();
-      renderArchiveMonth();
+      if (!archiveRows) {
+        const grid = document.getElementById('archiveGrid');
+        grid.textContent = t('loading');
+        archiveRows = await fetchPuzzleArchive();
+      }
+      renderArchiveGrid();
     }
 
     function closeArchive() {
@@ -2657,12 +2800,6 @@
       const openBtn = document.getElementById('menuArchiveBtn');
       openBtn.addEventListener('click', openArchive);
       document.getElementById('archiveCloseBtn').addEventListener('click', closeArchive);
-      document.getElementById('archivePrevBtn').addEventListener('click', () => {
-        if (archiveMonthIndex > 0) { archiveMonthIndex -= 1; renderArchiveMonth(); }
-      });
-      document.getElementById('archiveNextBtn').addEventListener('click', () => {
-        if (archiveMonthIndex < archiveMonthKeys.length - 1) { archiveMonthIndex += 1; renderArchiveMonth(); }
-      });
     }
 
     function wireHomeButton() {
@@ -2731,8 +2868,63 @@
       setTimeout(() => { el.style.display = 'none'; }, 300);
     }
 
+    // Lightweight, opt-in perf instrumentation (see PERFORMANCE.md). Marks
+    // are cheap no-ops unless ?perf=1 is in the URL, so they're safe to leave
+    // in place permanently rather than stripping them for production.
+    function pnbMark(name) {
+      try { performance.mark(name); } catch (_e) { /* perf API unavailable */ }
+    }
+
+    function pnbPerfEnabled() {
+      try { return new URLSearchParams(location.search).get('perf') === '1'; }
+      catch (_e) { return false; }
+    }
+
+    function reportPerf() {
+      if (!pnbPerfEnabled()) return;
+      try {
+        const at = (name) => {
+          const entries = performance.getEntriesByName(name);
+          return entries.length ? entries[entries.length - 1].startTime : null;
+        };
+        const bootStart = at('pnb:boot-start');
+        const i18nDone = at('pnb:i18n-loaded');
+        const puzzleFetched = at('pnb:puzzle-fetched');
+        const svgLoaded = at('pnb:svg-loaded');
+        const svgAnnotated = at('pnb:svg-annotated');
+        const interactive = at('pnb:interactive');
+        if (bootStart == null || interactive == null) return;
+
+        const ms = (a, b) => (a != null && b != null) ? Math.round(b - a) : '';
+        const row = {
+          time_to_interactive_ms: Math.round(interactive - bootStart),
+          i18n_ms: ms(bootStart, i18nDone),
+          puzzle_fetch_ms: ms(i18nDone, puzzleFetched),
+          svg_load_ms: ms(puzzleFetched, svgLoaded),
+          svg_annotate_ms: ms(svgLoaded, svgAnnotated),
+        };
+
+        const date = new Date().toISOString().slice(0, 10);
+        const csvRow = `${date},DEVICE,BROWSER,NOTES,${row.time_to_interactive_ms},${row.i18n_ms},${row.puzzle_fetch_ms},${row.svg_load_ms},${row.svg_annotate_ms}`;
+        console.log('[pnb-perf] fill in DEVICE/BROWSER/NOTES and append to perf/BENCHMARKS.csv:');
+        console.log(csvRow);
+
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:99999;background:rgba(0,0,0,0.85);color:#fff;font:12px/1.5 monospace;padding:10px 12px;border-radius:8px;max-width:90vw;white-space:pre;';
+        el.textContent = `pnb-perf (ms)\ntime-to-interactive: ${row.time_to_interactive_ms}\ni18n load: ${row.i18n_ms}\npuzzle fetch: ${row.puzzle_fetch_ms}\nsvg load: ${row.svg_load_ms}\nsvg annotate: ${row.svg_annotate_ms}\n(full CSV row logged to console)`;
+        const closeBtn = document.createElement('div');
+        closeBtn.textContent = '× close';
+        closeBtn.style.cssText = 'margin-top:6px;text-align:right;opacity:0.7;cursor:pointer;';
+        closeBtn.addEventListener('click', () => el.remove());
+        el.appendChild(closeBtn);
+        document.body.appendChild(el);
+      } catch (_e) { /* perf reporting must never break the app */ }
+    }
+
     async function boot() {
+      pnbMark('pnb:boot-start');
       hideNativeSplash();
+      wireViewportSizeSync();
 
       // The animated splash is a first-impression/branding moment, not a generic
       // "please wait" spinner — it should only play once per app session (native
@@ -2749,6 +2941,7 @@
       const bootStarted = Date.now();
       try {
         I18N = await loadTranslations(LANG);
+        pnbMark('pnb:i18n-loaded');
         document.documentElement.lang = LANG;
         applyStaticTranslations();
         wireTopbarHeightSync();
@@ -2761,6 +2954,7 @@
         wireHomeButton();
         wireNumbersToggle();
         const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
+        pnbMark('pnb:puzzle-fetched');
         await main(puzzle);
       } finally {
         if (isFirstBoot) {
@@ -2771,13 +2965,24 @@
       }
     }
 
+    wireDebugBanner();
+    wireProductionErrorOverlay();
+
     boot().catch((err) => {
       console.error(err);
+      const isFile = window.location.protocol === 'file:';
+      if (IS_PRODUCTION) {
+        showProductionError(isFile ? 'FILE_PROTOCOL' : (err.code || 'BOOT_FAILED'));
+        return;
+      }
+      showDebugBanner(`boot() failed: ${err.message || err}\n\nSUPABASE_URL: ${SUPABASE_URL}`);
+      // #svgWrap only exists on the puzzle route (renderMenu's failures are
+      // handled inline instead) — guard rather than assume it's present.
       const svgWrap = document.getElementById('svgWrap');
+      if (!svgWrap) return;
       svgWrap.innerHTML = '';
       const msg = document.createElement('div');
       msg.className = 'loading';
-      const isFile = window.location.protocol === 'file:';
       msg.textContent = isFile
         ? t('errorFileProtocol')
         : t('errorGeneric', { message: err.message || err });
