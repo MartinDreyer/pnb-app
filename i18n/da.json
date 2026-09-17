@@ -17,7 +17,7 @@
   "backToMenuLabel": "Tilbage til menuen",
   "numbersToggleLabel": "Skjul tal på malede felter",
   "puzzleNumberTitle": "Maleri #{{number}}",
-  "topbarHint": "Vælg en farve, tryk på felterne — og gæt maleriet, mens du maler",
+  "topbarHint": "Vælg en farve, og tryk på felterne",
   "loading": "Indlæser…",
   "loadingPuzzle": "Indlæser dagens billede…",
   "loadingPainting": "Indlæser billede…",
