@@ -17,7 +17,7 @@
   "backToMenuLabel": "Back to menu",
   "numbersToggleLabel": "Hide numbers on painted areas",
   "puzzleNumberTitle": "Painting #{{number}}",
-  "topbarHint": "Pick a color, tap the regions — and guess the painting as you go",
+  "topbarHint": "Pick a color, and tap the regions",
   "loading": "Loading…",
   "loadingPuzzle": "Loading today’s puzzle…",
   "loadingPainting": "Loading painting…",

@@ -59,8 +59,6 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [ ] Refresh Android's `mipmap-*/ic_launcher*.png` launcher icons (still the default Capacitor placeholder)
 - [ ] Enroll in the paid Apple Developer Program so the app can actually be uploaded to TestFlight
 - [ ] Add a completion timer (start on first paint, stop when the puzzle is finished)
-- [ ] Add a mid-fill "guess the painting" option
-- [ ] Build a leaderboard ranking guesses by how early/correct they were
 - [ ] Switch control-panel SMK browsing (search/random candidate lists) to `image_thumbnail` instead of `image_native`; keep `image_native` only for the painting actually chosen for generation
 - [ ] Move puzzle-prep scheduling off the Node process's `setInterval` onto a real cron/scheduler, so it runs reliably regardless of whether the control panel server is up
 
@@ -71,3 +69,4 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Add opt-in (`?perf=1`) boot performance instrumentation to `index.html` plus `PERFORMANCE.md`/`perf/BENCHMARKS.csv` for tracking benchmark runs over time
 - [x] Update the cheat swatch's label to "Udfyld (næsten) alt" and adjust its CSS so the longer text fits
 - [x] Show the puzzle's serial number in the topbar (e.g. "Maleri #4") so reopening an old puzzle from the menu/Archive makes clear which one is open
+- [x] Remove the stale "guess the painting" wording from the topbar hint text; remove the two outdated guessing-related backlog ideas
