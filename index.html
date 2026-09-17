@@ -386,6 +386,21 @@
       opacity: 0.35;
     }
 
+    /* The cheat swatch's bottom label ("Udfyld (næsten) alt") is much
+       longer than a plain color count — shrink it and tighten the row's
+       gap so a two-line wrap still fits the swatch's fixed 84px height. */
+    .swatch.cheat {
+      gap: 3px;
+    }
+
+    .swatch.cheat .swatchCount {
+      font-size: 9px;
+      line-height: 1.15;
+      white-space: normal;
+      text-align: center;
+      padding: 0 2px;
+    }
+
     .swatch.active {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
@@ -1205,7 +1220,11 @@
     <div class="topbar">
       <!-- Deliberately doesn't show the painting's title/artist — that's
            part of the game: guess what you're painting as you go. The real
-           title is revealed in the trivia panel on completion instead. -->
+           title is revealed in the trivia panel on completion instead. The
+           puzzle's serial number is shown though (set by setPuzzleTitle) —
+           it doesn't spoil anything, and makes it obvious which puzzle
+           you're looking at after opening one from the Archive/history. -->
+      <div class="title" id="puzzleTitle"></div>
       <div class="hint" data-i18n="topbarHint"></div>
     </div>
 
@@ -1480,6 +1499,32 @@
       });
       if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'PUZZLE_NOT_FOUND' });
       return mapPuzzleRow(rows[0]);
+    }
+
+    // A puzzle's number (its 1-based position in the full rotation schedule,
+    // same definition as fetchNumberedPuzzleHistory) shown in the topbar so
+    // reopening an old puzzle from the menu/Archive makes it obvious which
+    // one you're looking at. Doesn't spoil title/artist — just a serial
+    // number — so unlike those it's safe to show immediately.
+    async function fetchPuzzleNumber(puzzleId) {
+      const rows = await supabaseSelect('rotation_schedule', {
+        select: 'puzzles(id)',
+        order: 'active_from.asc',
+        limit: '1000',
+      });
+      const idx = rows.findIndex((row) => row.puzzles && row.puzzles.id === puzzleId);
+      return idx === -1 ? null : idx + 1;
+    }
+
+    function setPuzzleTitle(number) {
+      const el = document.getElementById('puzzleTitle');
+      if (number == null) {
+        if (el) el.textContent = '';
+        return;
+      }
+      const label = t('puzzleNumberTitle', { number });
+      if (el) el.textContent = label;
+      document.title = label;
     }
 
     // Past puzzles, newest first, each labeled by its release order ("#N")
@@ -2955,6 +3000,7 @@
         wireNumbersToggle();
         const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
         pnbMark('pnb:puzzle-fetched');
+        fetchPuzzleNumber(puzzle.puzzleId).then(setPuzzleTitle).catch(() => {});
         await main(puzzle);
       } finally {
         if (isFirstBoot) {
