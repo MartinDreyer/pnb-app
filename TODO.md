@@ -67,3 +67,5 @@ new items to the end of the relevant section rather than inserting mid-list.
 ## Done (2026-09-17)
 
 - [x] Add a `pnb-app` develop/production mode toggle (`window.PNB_CONFIG.ENV` in `config.js`) so production shows a translated, detail-free "something went wrong" popup with an error code instead of the technical debug banner/raw error message
+- [x] Write `IPAD_QA_CHECKLIST.md`, a manual iPad production-readiness checklist
+- [x] Add opt-in (`?perf=1`) boot performance instrumentation to `index.html` plus `PERFORMANCE.md`/`perf/BENCHMARKS.csv` for tracking benchmark runs over time

@@ -2563,7 +2563,9 @@
         if (paletteEl) paletteEl.style.display = '';
 
         const svg = await loadSvg(svgUrl);
+        pnbMark('pnb:svg-loaded');
         const annotated = annotateSvg(svg, palette);
+        pnbMark('pnb:svg-annotated');
         svgWrap.innerHTML = '';
         svgWrap.appendChild(annotated);
 
@@ -2643,6 +2645,8 @@
             // Now wire pan/zoom + tap-to-paint on the fitted SVG
             panzoomCtl = wireCanvasInteractions(annotated, svgWrap, paletteSelection, onCorrectPaint);
             checkFitsWithinWrap(annotated, svgWrap);
+            pnbMark('pnb:interactive');
+            reportPerf();
           });
         });
         window.addEventListener('resize', () => checkFitsWithinWrap(annotated, svgWrap));
@@ -2864,7 +2868,61 @@
       setTimeout(() => { el.style.display = 'none'; }, 300);
     }
 
+    // Lightweight, opt-in perf instrumentation (see PERFORMANCE.md). Marks
+    // are cheap no-ops unless ?perf=1 is in the URL, so they're safe to leave
+    // in place permanently rather than stripping them for production.
+    function pnbMark(name) {
+      try { performance.mark(name); } catch (_e) { /* perf API unavailable */ }
+    }
+
+    function pnbPerfEnabled() {
+      try { return new URLSearchParams(location.search).get('perf') === '1'; }
+      catch (_e) { return false; }
+    }
+
+    function reportPerf() {
+      if (!pnbPerfEnabled()) return;
+      try {
+        const at = (name) => {
+          const entries = performance.getEntriesByName(name);
+          return entries.length ? entries[entries.length - 1].startTime : null;
+        };
+        const bootStart = at('pnb:boot-start');
+        const i18nDone = at('pnb:i18n-loaded');
+        const puzzleFetched = at('pnb:puzzle-fetched');
+        const svgLoaded = at('pnb:svg-loaded');
+        const svgAnnotated = at('pnb:svg-annotated');
+        const interactive = at('pnb:interactive');
+        if (bootStart == null || interactive == null) return;
+
+        const ms = (a, b) => (a != null && b != null) ? Math.round(b - a) : '';
+        const row = {
+          time_to_interactive_ms: Math.round(interactive - bootStart),
+          i18n_ms: ms(bootStart, i18nDone),
+          puzzle_fetch_ms: ms(i18nDone, puzzleFetched),
+          svg_load_ms: ms(puzzleFetched, svgLoaded),
+          svg_annotate_ms: ms(svgLoaded, svgAnnotated),
+        };
+
+        const date = new Date().toISOString().slice(0, 10);
+        const csvRow = `${date},DEVICE,BROWSER,NOTES,${row.time_to_interactive_ms},${row.i18n_ms},${row.puzzle_fetch_ms},${row.svg_load_ms},${row.svg_annotate_ms}`;
+        console.log('[pnb-perf] fill in DEVICE/BROWSER/NOTES and append to perf/BENCHMARKS.csv:');
+        console.log(csvRow);
+
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:99999;background:rgba(0,0,0,0.85);color:#fff;font:12px/1.5 monospace;padding:10px 12px;border-radius:8px;max-width:90vw;white-space:pre;';
+        el.textContent = `pnb-perf (ms)\ntime-to-interactive: ${row.time_to_interactive_ms}\ni18n load: ${row.i18n_ms}\npuzzle fetch: ${row.puzzle_fetch_ms}\nsvg load: ${row.svg_load_ms}\nsvg annotate: ${row.svg_annotate_ms}\n(full CSV row logged to console)`;
+        const closeBtn = document.createElement('div');
+        closeBtn.textContent = '× close';
+        closeBtn.style.cssText = 'margin-top:6px;text-align:right;opacity:0.7;cursor:pointer;';
+        closeBtn.addEventListener('click', () => el.remove());
+        el.appendChild(closeBtn);
+        document.body.appendChild(el);
+      } catch (_e) { /* perf reporting must never break the app */ }
+    }
+
     async function boot() {
+      pnbMark('pnb:boot-start');
       hideNativeSplash();
       wireViewportSizeSync();
 
@@ -2883,6 +2941,7 @@
       const bootStarted = Date.now();
       try {
         I18N = await loadTranslations(LANG);
+        pnbMark('pnb:i18n-loaded');
         document.documentElement.lang = LANG;
         applyStaticTranslations();
         wireTopbarHeightSync();
@@ -2895,6 +2954,7 @@
         wireHomeButton();
         wireNumbersToggle();
         const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
+        pnbMark('pnb:puzzle-fetched');
         await main(puzzle);
       } finally {
         if (isFirstBoot) {
