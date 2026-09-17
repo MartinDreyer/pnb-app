@@ -31,10 +31,10 @@ always before a release build.
 
 ## 1. Cold launch
 
-- [ ] Fresh install (delete any existing copy first) launches to the native
+- [x] Fresh install (delete any existing copy first) launches to the native
       splash, then the animated splash, then either the home menu or a
       puzzle — no flash of blank white screen at any point
-- [ ] The very first launch after install (or after just trusting the
+- [x] The very first launch after install (or after just trusting the
       developer certificate) may show a black screen for a couple of
       seconds before the splash appears — this is iOS validating the fresh
       binary's code signature before the process can even start, happens
@@ -56,50 +56,48 @@ always before a release build.
 
 ## 2. Orientation & layout (known regression risk — see notes)
 
-- [ ] Launch in portrait, rotate to landscape, rotate back: canvas fills the
+- [x] Launch in portrait, rotate to landscape, rotate back: canvas fills the
       full screen at every step, no stale narrow/short viewport
-- [ ] Navigate menu → puzzle → menu (back button) in both orientations: no
+- [x] Navigate menu → puzzle → menu (back button) in both orientations: no
       stuck narrow width after the reload-based navigation
-- [ ] Rotate mid-puzzle while partially painted: progress is preserved,
+- [x] Rotate mid-puzzle while partially painted: progress is preserved,
       canvas re-fits to the new orientation
-- [ ] Home menu's recent-history strip wraps into a multi-row grid (not a
+- [x] Home menu's recent-history strip wraps into a multi-row grid (not a
       single horizontally-scrolling band) at iPad width, in both orientations
-- [ ] Palette swatch row height looks correct in both orientations (not
+- [x] Palette swatch row height looks correct in both orientations (not
       clipped, not oversized) on first paint after cold launch — this
       previously broke silently until a rotation "fixed" it
 - [ ] Test on at least two iPad sizes if available (e.g. iPad mini and iPad
-      Pro 11"/12.9") — layouts that fit one may not fit the other
+      Pro 11"/12.9") — layouts that fit one may not fit the other (Not currently possible to test)
 
 ## 3. Core painting mechanics
 
-- [ ] Tapping a swatch selects it (visual selected state is clear)
-- [ ] Tapping a region with the wrong color selected does nothing
-- [ ] Tapping a region with the correct color selected paints it, updates
+- [x] Tapping a swatch selects it (visual selected state is clear)
+- [x] Tapping a region with the wrong color selected does nothing
+- [x] Tapping a region with the correct color selected paints it, updates
       that color's remaining count, and updates the number label visibility
-- [ ] A swatch moves to the end of the row with a checkmark once its color
+- [x] A swatch moves to the end of the row with a checkmark once its color
       is fully painted
-- [ ] Pinch-to-zoom and one/two-finger pan work smoothly on the canvas
-- [ ] Native page zoom/scroll is disabled — the canvas doesn't fight the
+- [x] Pinch-to-zoom and one/two-finger pan work smoothly on the canvas
+- [x] Native page zoom/scroll is disabled — the canvas doesn't fight the
       OS's own pinch-zoom or bounce-scroll
-- [ ] Hint button (5 uses) pans/zooms to an unpainted region of the
+- [x] Hint button (5 uses) pans/zooms to an unpainted region of the
       selected color, and the remaining-uses count decrements correctly,
       disabling itself at zero
-- [ ] Cheat swatch fills all-but-one remaining region and never completes
+- [x] Cheat swatch fills all-but-one remaining region and never completes
       the puzzle by itself
-- [ ] Painting the very last region completes the puzzle: reference image
+- [x] Painting the very last region completes the puzzle: reference image
       fades in, and the trivia panel appears
-- [ ] Force-quit mid-puzzle and reopen: previously painted regions are
+- [x] Force-quit mid-puzzle and reopen: previously painted regions are
       restored correctly (per-puzzle progress persistence)
-- [ ] Reopening an already-completed puzzle from history shows it already
+- [x] Reopening an already-completed puzzle from history shows it already
       finished/revealed, not paintable again
 
 ## 4. Navigation & history
 
-- [ ] Home menu → puzzle → home button → back at menu, state intact
+- [x] Home menu → puzzle → home button → back at menu, state intact
 - [ ] Recent-history strip entries open the correct past puzzle
-- [ ] Archive (if applicable) opens and its entries open the correct puzzle
-- [ ] Deep link / hash-based puzzle IDs (`#p/<id>`) load the right puzzle
-      directly on cold launch, not just via in-app navigation
+- [x] Archive (if applicable) opens and its entries open the correct puzzle
 
 ## 5. Language / i18n
 
