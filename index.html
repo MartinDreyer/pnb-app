@@ -1,20 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="da">
 <head>
   <meta charset="utf-8" />
   <!-- Disable page zoom; we implement pinch-zoom inside the canvas -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Paint by Numbers</title>
+  <title>Mal efter tal</title>
   <style>
     :root {
       --target-w: 1620;
       --target-h: 2160;
-      --topbar-h: 56px;
-      /* Floating palette height */
+      --topbar-h: 64px;
+      /* Floating palette height. Plain vh suffers the same iPad Safari/
+         WKWebView bug described on .app below (keeps the pre-rotation
+         value after a portrait<->landscape switch, understating the
+         painting's available height until something forces a relayout) —
+         the dvh override the line below fixes it the same way .app's
+         height does. */
       --palette-h: clamp(220px, 22vh, 360px);
+      --palette-h: clamp(220px, 22dvh, 360px);
       --bg: #FFFFFF;
       --panel: #FFFFFF;
       --panel2: #FFFFFF;
+      /* Distinct from --bg/--panel so the painting card reads as a framed
+         picture against a matte, instead of a white card on white. */
+      --canvas-bg: #EAEDF1;
       --text: #111111;
       --muted: #444444;
       --accent: #6ea8ff;
@@ -32,24 +41,45 @@
     }
 
     .app {
-      height: 100vh;
-      width: 100vw;
+      /* iPad Safari/WKWebView sometimes keeps a stale pre-layout 100vh/100vw
+         value right after a fresh page load (this app navigates menu<->
+         puzzle via location.reload(), so this happens on every navigation,
+         not just cold launch) — the real viewport isn't reflected until
+         something forces a relayout, e.g. rotating the device. Same bug on
+         both axes: a stale height leaves a white gap below the app shell, a
+         stale (too narrow) width leaves blank space beside it. --app-vh/
+         --app-vw are kept in sync with the real innerHeight/innerWidth via
+         JS (see wireViewportSizeSync) as the primary fix; 100dvh/100dvw
+         are layered on top for browsers new enough to compute them
+         correctly on their own. */
+      height: calc(var(--app-vh, 1vh) * 100);
+      height: 100dvh;
+      width: calc(var(--app-vw, 1vw) * 100);
+      width: 100dvw;
       position: relative;
     }
 
     .topbar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 4px;
+      padding: calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px));
       border-bottom: 1px solid var(--stroke);
       background: #FFFFFF;
-      gap: 10px;
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
-      height: var(--topbar-h);
+      /* Height is intentionally NOT fixed: translated hint text varies in
+         length, and forcing a single line (or a hardcoded height) either
+         truncates it or clips a wrapped second line depending on language.
+         --topbar-h is measured from the real rendered height (see
+         wireTopbarHeightSync) and used by .canvas/.fitWarning to offset
+         around whatever that turns out to be. min-height is just the
+         pre-JS-measurement fallback. */
+      min-height: var(--topbar-h);
       box-sizing: border-box;
       z-index: 50;
     }
@@ -62,18 +92,6 @@
       user-select: none;
     }
 
-    .logo {
-      height: 14px; /* match .title font-size */
-      width: auto;
-      display: block;
-    }
-
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
     select {
       background: #FFFFFF;
       color: var(--text);
@@ -84,17 +102,22 @@
       outline: none;
     }
 
+    /* Sits on its own full-width row under the logo, so the whole line is
+       always visible instead of competing for space with other elements.
+       Wraps rather than truncating — translated text length is unpredictable. */
     .hint {
       font-size: 12px;
+      line-height: 1.35;
       color: var(--muted);
       user-select: none;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .canvas {
-      background: var(--panel2);
+      background: var(--canvas-bg);
       position: absolute;
       inset: 0;
+      z-index: 0;
       padding-top: var(--topbar-h);
       /* Reserve space so the painting still fits in visible area */
       padding-bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px));
@@ -104,12 +127,38 @@
       place-items: center;
     }
 
+    /* Same soft colorful blobs as the menu (see .menuOverlay::before), toned
+       down further since this sits behind the actual artwork: low enough
+       opacity that it livens up the matte --canvas-bg without competing
+       with the painting's contrast. Painted behind .svgWrap via negative
+       z-index (requires .canvas's z-index:0 above to form a stacking
+       context to paint into). */
+    .canvas::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.28), rgba(110,168,255,0) 70%),
+        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.25), rgba(240,180,41,0) 70%),
+        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.25), rgba(95,180,136,0) 70%),
+        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.25), rgba(217,142,95,0) 70%);
+    }
+
     .svgWrap {
       width: 100%;
       height: 100%;
+      /* Grid items default to min-width/min-height:auto, which for a replaced element
+         with an intrinsic aspect ratio (our SVG/img below) can demand more height than
+         is actually available. Combined with .canvas's overflow:hidden, that silently
+         crops the bottom instead of letting preserveAspectRatio/object-fit do their job.
+         min-height/min-width:0 forces this box to actually respect its constrained size. */
+      min-width: 0;
+      min-height: 0;
       display: grid;
       place-items: center;
-      padding: 12px;
+      padding: 20px;
       box-sizing: border-box;
     }
 
@@ -117,9 +166,12 @@
     #pnb-svg {
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
       background: white;
       border-radius: 14px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      border: 1px solid var(--stroke);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.22);
       /* We handle pan/zoom ourselves */
       touch-action: none;
       transform-origin: 0 0;
@@ -129,10 +181,13 @@
     .finalImage {
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
       object-fit: contain;
       background: white;
       border-radius: 14px;
-      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+      border: 1px solid var(--stroke);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.22);
       display: block;
       opacity: 0;
       transition: opacity 2250ms ease;
@@ -144,11 +199,43 @@
 
     #pnb-svg path {
       cursor: pointer;
-      transition: fill 120ms ease;
+      transition: fill 60ms linear;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
     }
 
     #pnb-svg path[data-color-num="-1"] {
       cursor: not-allowed;
+    }
+
+    @keyframes pnbWrongTap {
+      0% { opacity: 1; }
+      45% { opacity: 0.32; }
+      100% { opacity: 1; }
+    }
+
+    #pnb-svg path.pnb-wrong {
+      animation: pnbWrongTap 170ms ease;
+    }
+
+    @keyframes pnbCorrectFill {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+
+    #pnb-svg path.pnb-correct {
+      animation: pnbCorrectFill 260ms ease-out;
+    }
+
+    @keyframes pnbHintPulse {
+      0%, 100% { stroke: rgba(255, 90, 90, 0.95); stroke-width: 3; }
+      50% { stroke: rgba(255, 90, 90, 0.15); stroke-width: 6; }
+    }
+
+    #pnb-svg path.pnb-hint {
+      animation: pnbHintPulse 700ms ease-in-out 3;
+      paint-order: stroke;
     }
 
     .palette {
@@ -174,10 +261,36 @@
       gap: 10px;
     }
 
+    .selectedGroup {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .selectedChip {
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 1px solid rgba(0,0,0,0.2);
+      display: none;
+      flex: none;
+    }
+
+    .selectedChip.show {
+      display: block;
+    }
+
     .selected {
       font-size: 13px;
       color: var(--muted);
       user-select: none;
+    }
+
+    .swatchesWrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
     }
 
     .swatches {
@@ -188,7 +301,46 @@
       overflow-x: auto;
       overflow-y: hidden;
       -webkit-overflow-scrolling: touch;
-      padding-bottom: 6px;
+      /* Top/right padding gives the .swatchCheck badge (which pokes outside
+         its .swatch's own box) room so this container's overflow-y: hidden
+         doesn't clip it. */
+      padding: 10px 10px 6px 0;
+      height: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Edge fades signal there are more colors to scroll to — without them,
+       the row can look like a short, complete list on narrow screens. */
+    .edgeFade {
+      position: absolute;
+      top: 0;
+      bottom: 6px;
+      width: 34px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 200ms ease;
+      display: flex;
+      align-items: center;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--muted);
+      z-index: 5;
+    }
+
+    .edgeFade.show {
+      opacity: 1;
+    }
+
+    .edgeFade.left {
+      left: 0;
+      justify-content: flex-start;
+      background: linear-gradient(to right, #FFFFFF 45%, rgba(255,255,255,0));
+    }
+
+    .edgeFade.right {
+      right: 0;
+      justify-content: flex-end;
+      background: linear-gradient(to left, #FFFFFF 45%, rgba(255,255,255,0));
     }
 
     .swatch {
@@ -234,6 +386,21 @@
       opacity: 0.35;
     }
 
+    /* The cheat swatch's bottom label ("Udfyld (næsten) alt") is much
+       longer than a plain color count — shrink it and tighten the row's
+       gap so a two-line wrap still fits the swatch's fixed 84px height. */
+    .swatch.cheat {
+      gap: 3px;
+    }
+
+    .swatch.cheat .swatchCount {
+      font-size: 9px;
+      line-height: 1.15;
+      white-space: normal;
+      text-align: center;
+      padding: 0 2px;
+    }
+
     .swatch.active {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
@@ -243,52 +410,1244 @@
       transform: translateY(1px);
     }
 
+    /* Completed colors move to the end of the row and dim, rather than
+       disappearing — they stay visible as a record of progress. */
+    .swatch.done {
+      order: 50;
+      opacity: 0.5;
+    }
+
+    .swatchCheck {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #2a9d8f;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+      opacity: 0;
+      transform: scale(0.5);
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+
+    .swatch.done .swatchCheck {
+      opacity: 1;
+      transform: scale(1);
+    }
+
     .loading {
       color: var(--muted);
       font-size: 13px;
       padding: 18px;
       user-select: none;
     }
+
+    .fitWarning {
+      position: fixed;
+      top: calc(var(--topbar-h) + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 70;
+      background: #fff3cd;
+      color: #664d03;
+      border: 1px solid rgba(0,0,0,0.15);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      max-width: calc(100vw - 24px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      display: none;
+    }
+
+    .fitWarning.show {
+      display: block;
+    }
+
+    /* Temporary debug aid (see showDebugBanner): surfaces network/loading
+       failures that would otherwise fail silently behind the splash screen
+       (e.g. config.js's SUPABASE_URL pointing at a stale LAN IP). Deliberately
+       untranslated and technical (raw error + URL) rather than a polished
+       user-facing message — this is for diagnosing setup issues during
+       development, not the end-user error copy (that's errorGeneric/
+       errorNoActivePuzzle etc., shown separately). Above everything,
+       including the splash screen, so it's visible even if boot never
+       finishes. */
+    .debugBanner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: #b3261e;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: calc(10px + env(safe-area-inset-top, 0px)) 36px 10px 12px;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      word-break: break-word;
+      display: none;
+      max-height: 50vh;
+      overflow-y: auto;
+    }
+
+    .debugBanner.show {
+      display: block;
+    }
+
+    .debugBannerClose {
+      position: absolute;
+      top: calc(6px + env(safe-area-inset-top, 0px));
+      right: 8px;
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    /* Production-mode counterpart to .debugBanner (see showProductionError):
+       a plain, translated "something went wrong" popup with no technical
+       detail, shown instead of the debug banner when
+       window.PNB_CONFIG.ENV === 'production'. Above everything, including
+       the splash screen, same as .debugBanner. */
+    .prodErrorOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.5);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .prodErrorOverlay.show {
+      display: flex;
+    }
+
+    .prodErrorBox {
+      background: #fff;
+      color: #1a1a1a;
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 320px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .prodErrorBox #prodErrorText {
+      font-size: 15px;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .prodErrorClose {
+      border: none;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 14px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+
+    /* Zoom affordance: one-time animated hint + persistent controls */
+    .zoomHint {
+      position: fixed;
+      left: 50%;
+      top: calc(var(--topbar-h) + 40%);
+      transform: translate(-50%, -50%);
+      z-index: 65;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 400ms ease;
+    }
+
+    .zoomHint.show {
+      opacity: 1;
+    }
+
+    .zoomHintIcon {
+      font-size: 40px;
+      animation: pnbPinch 1400ms ease-in-out infinite;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.35));
+    }
+
+    @keyframes pnbPinch {
+      0%, 100% { transform: scale(0.85); }
+      50% { transform: scale(1.15); }
+    }
+
+    .zoomHintText {
+      background: rgba(0,0,0,0.72);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .zoomControls {
+      position: fixed;
+      right: calc(12px + env(safe-area-inset-right, 0px));
+      bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px) + 14px);
+      z-index: 55;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .zoomBtn {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+
+    .zoomBtn:active {
+      transform: translateY(1px);
+    }
+
+    /* Back-to-menu button: reuses .zoomBtn's round look, pinned top-left
+       instead of bottom-right, only shown while a puzzle is open. */
+    .homeBtn {
+      position: fixed;
+      left: calc(12px + env(safe-area-inset-left, 0px));
+      top: calc(8px + env(safe-area-inset-top, 0px));
+      z-index: 56;
+      display: none;
+    }
+
+    .homeBtn.show {
+      display: flex;
+    }
+
+    /* Reserve room in the topbar so its text never sits under the fixed-position
+       back button — both are otherwise anchored to the same left edge. */
+    .topbar.hasBack {
+      padding-left: calc(60px + env(safe-area-inset-left, 0px));
+    }
+
+    .numbersToggleBtn {
+      position: fixed;
+      right: calc(12px + env(safe-area-inset-right, 0px));
+      top: calc(8px + env(safe-area-inset-top, 0px));
+      z-index: 56;
+      display: none;
+    }
+
+    .numbersToggleBtn.show {
+      display: flex;
+    }
+
+    .numbersToggleBtn.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
+    }
+
+    /* Mirrors .topbar.hasBack, reserving room on the right instead. */
+    .topbar.hasNumbersToggle {
+      padding-right: calc(60px + env(safe-area-inset-right, 0px));
+    }
+
+    /* In-app splash: painted over the native launch splash the instant the web
+       view can render anything (plain HTML/CSS, no JS needed), so the handoff
+       from native splash to app content has no gap to flash black/blank in.
+       Sits above absolutely everything, including the menu. */
+    .splashOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      transition: opacity 300ms ease;
+    }
+
+    .splashOverlay.hide {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .splashMark {
+      position: relative;
+      width: 160px;
+      height: 160px;
+    }
+
+    .splashSwatch {
+      position: absolute;
+      width: 76px;
+      height: 76px;
+      border-radius: 18px;
+      border: 4px solid var(--bg);
+      animation: splashColorCycle 2.4s ease-in-out infinite;
+    }
+
+    .splashSwatch:nth-child(1) { top: 0; left: 0; transform: rotate(-8deg); animation-delay: 0s; }
+    .splashSwatch:nth-child(2) { top: 0; right: 0; transform: rotate(10deg); animation-delay: 0.2s; }
+    .splashSwatch:nth-child(3) { bottom: 0; left: 0; transform: rotate(12deg); animation-delay: 0.4s; }
+    .splashSwatch:nth-child(4) { bottom: 0; right: 0; transform: rotate(-10deg); animation-delay: 0.6s; }
+
+    @keyframes splashColorCycle {
+      0% { background-color: #6ea8ff; }
+      25% { background-color: #d98e5f; }
+      50% { background-color: #8a6a4f; }
+      75% { background-color: #3a3a3a; }
+      100% { background-color: #6ea8ff; }
+    }
+
+    .splashTitle {
+      font-weight: 700;
+      font-size: 20px;
+      color: var(--text);
+    }
+
+    /* Menu screen: today's puzzle + history of past weeks. Sits above every
+       other overlay (.fitWarning is the highest existing z-index at 70). */
+    .menuOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: var(--bg);
+      box-sizing: border-box;
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      overflow-y: auto;
+      display: none;
+    }
+
+    .menuOverlay.show {
+      display: block;
+    }
+
+    /* Soft colorful blobs behind the menu/archive content, instead of flat
+       white — purely decorative (low opacity, non-interactive), so it never
+       competes with the cards on top of it for readability. Scoped to these
+       two overlays only; the painting canvas keeps its matte --canvas-bg for
+       contrast against the artwork.
+       Deliberately no `filter: blur()` here — a full-viewport blur is a real
+       rasterization cost (worse on low-power/mobile GPUs), and this is a
+       reload-based app so every menu<->puzzle navigation repaints it from
+       scratch. The soft edge instead comes from the gradient's own fade-to-
+       transparent stops, which the compositor renders directly with no blur
+       pass. */
+    .menuOverlay::before,
+    .archiveOverlay::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.55), rgba(110,168,255,0) 70%),
+        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.5), rgba(240,180,41,0) 70%),
+        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.5), rgba(95,180,136,0) 70%),
+        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.5), rgba(217,142,95,0) 70%);
+    }
+
+    .menuHeader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: 0 0 20px;
+    }
+
+    .menuBrandMark {
+      position: relative;
+      width: 40px;
+      height: 40px;
+      flex: none;
+    }
+
+    .menuBrandSwatch {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 2px solid var(--bg);
+    }
+
+    .menuBrandSwatch:nth-child(1) { top: 0; left: 0; background: #6ea8ff; transform: rotate(-8deg); }
+    .menuBrandSwatch:nth-child(2) { top: 0; right: 0; background: #d98e5f; transform: rotate(10deg); }
+    .menuBrandSwatch:nth-child(3) { bottom: 0; left: 0; background: #8a6a4f; transform: rotate(12deg); }
+    .menuBrandSwatch:nth-child(4) { bottom: 0; right: 0; background: #3a3a3a; transform: rotate(-10deg); }
+
+    .menuTitle {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    .menuTodayCard {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 16px;
+      box-sizing: border-box;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+      font: inherit;
+      color: inherit;
+    }
+
+    .menuTodayCard:active {
+      transform: translateY(1px);
+    }
+
+    .menuThumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 10px;
+      object-fit: cover;
+      flex: none;
+      background: var(--stroke);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+    }
+
+    .menuTodayBody {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .menuTodayHeading {
+      font-weight: 650;
+      font-size: 15px;
+      margin-bottom: 2px;
+    }
+
+    .menuStatus {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .menuHistoryTitle {
+      font-size: 14px;
+      font-weight: 650;
+      color: var(--muted);
+      margin: 24px 0 0;
+    }
+
+    .menuHistorySubtitle {
+      font-size: 12px;
+      color: var(--muted);
+      opacity: 0.8;
+      margin: 2px 0 10px;
+    }
+
+    .menuHistoryStrip {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-snap-type: x proximity;
+      padding: 2px 2px 10px;
+      margin: 0 -2px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* On a screen wide enough to fit several cards per row (iPad and up), a
+       single horizontally-scrolling band wastes most of the screen's width
+       and height. Switch to a wrapping grid of several bands instead — same
+       cards, same click targets, just laid out to use the extra room. */
+    @media (min-width: 700px) {
+      .menuHistoryStrip {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        overflow-x: visible;
+        overflow-y: visible;
+      }
+
+      .menuHistoryStrip .menuHistoryItem {
+        width: 100%;
+      }
+    }
+
+    .menuHistoryItem {
+      flex: none;
+      width: 120px;
+      scroll-snap-align: start;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 10px;
+      box-sizing: border-box;
+      text-align: left;
+      cursor: pointer;
+      touch-action: manipulation;
+      font: inherit;
+      color: inherit;
+    }
+
+    .menuHistoryItem:active {
+      transform: translateY(1px);
+    }
+
+    .menuHistoryItem .menuThumb {
+      width: 100%;
+      height: 84px;
+      border-radius: 10px;
+      font-size: 22px;
+    }
+
+    .menuHistoryNumber {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .menuHistoryItem .menuStatus {
+      font-size: 11px;
+    }
+
+    .menuHistoryEmpty {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .menuArchiveBtn {
+      display: block;
+      margin: 4px 0 0;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 10px 18px;
+      font: inherit;
+      font-weight: 650;
+      font-size: 13px;
+      color: inherit;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .menuArchiveBtn:active {
+      transform: translateY(1px);
+    }
+
+    /* Archive overlay: a flat grid of every past, numbered puzzle. Same
+       layering approach as .menuOverlay (fixed, above everything but below
+       nothing since it's only ever opened from the menu). */
+    .archiveOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 210;
+      background: var(--bg);
+      box-sizing: border-box;
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      overflow-y: auto;
+      display: none;
+    }
+
+    .archiveOverlay.show {
+      display: block;
+    }
+
+    .archiveHeader {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .archiveTitle {
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0 0 2px;
+    }
+
+    .archiveSubtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .archiveCloseBtn {
+      flex: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      color: inherit;
+      font-size: 15px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .archiveGrid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .archiveGrid .menuHistoryItem {
+      width: 100%;
+    }
+
+    .archiveEmpty {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      padding: 24px 0;
+    }
+
+    /* Hint button */
+    .hintBtn {
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--text);
+      background: #FFFFFF;
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 6px 12px;
+      user-select: none;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+
+    .hintBtn:active {
+      transform: translateY(1px);
+    }
+
+    .hintBtn[disabled] {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Completion trivia panel */
+    .triviaPanel {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #FFFFFF;
+      border-top: 1px solid var(--stroke);
+      box-shadow: 0 -8px 28px rgba(0,0,0,0.18);
+      padding: 14px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+      max-height: 42vh;
+      overflow-y: auto;
+      z-index: 60;
+      transform: translateY(100%);
+      transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .triviaPanel.show {
+      transform: translateY(0);
+    }
+
+    .triviaClose {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      font-size: 18px;
+      line-height: 1;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px 8px;
+      user-select: none;
+    }
+
+    .triviaTitle {
+      font-weight: 750;
+      font-size: 15px;
+      margin: 0 28px 2px 0;
+    }
+
+    .triviaArtist {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .triviaArtist a {
+      color: inherit;
+      text-decoration: underline;
+    }
+
+    .triviaGrid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 12px;
+      font-size: 13px;
+      margin: 0 0 10px 0;
+    }
+
+    .triviaGrid dt {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .triviaGrid dd {
+      margin: 0;
+    }
+
+    .triviaFact {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+    }
+
+    .triviaAiBlurb {
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin: 0 0 12px;
+    }
+
+    .triviaAiDisclaimer {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .triviaLoading {
+      font-size: 13px;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
   <div class="app">
-    <div class="topbar">
-      <img class="logo" src="logo.png" alt="Paint by Numbers" />
-      <div class="controls">
-        <div class="hint">Choose a color number, then tap a region</div>
-        <select id="paintingSelect" aria-label="Painting"></select>
+    <div class="debugBanner" id="debugBanner">
+      <button class="debugBannerClose" id="debugBannerClose" type="button" aria-label="Close">&times;</button>
+      <div id="debugBannerText"></div>
+    </div>
+    <div class="prodErrorOverlay" id="prodErrorOverlay">
+      <div class="prodErrorBox">
+        <div id="prodErrorText"></div>
+        <button class="prodErrorClose" id="prodErrorClose" type="button" data-i18n="errorPopupCloseLabel"></button>
       </div>
+    </div>
+    <div class="splashOverlay" id="splashOverlay">
+      <div class="splashMark">
+        <div class="splashSwatch"></div>
+        <div class="splashSwatch"></div>
+        <div class="splashSwatch"></div>
+        <div class="splashSwatch"></div>
+      </div>
+      <div class="splashTitle" data-i18n="appTitle"></div>
+    </div>
+
+    <div class="menuOverlay" id="menuOverlay">
+      <div class="menuHeader">
+        <div class="menuBrandMark">
+          <div class="menuBrandSwatch"></div>
+          <div class="menuBrandSwatch"></div>
+          <div class="menuBrandSwatch"></div>
+          <div class="menuBrandSwatch"></div>
+        </div>
+        <h1 class="menuTitle" data-i18n="menuTitle"></h1>
+      </div>
+      <button type="button" class="menuTodayCard" id="menuTodayCard">
+        <div class="menuThumb" id="menuTodayThumb">🎨</div>
+        <div class="menuTodayBody">
+          <div class="menuTodayHeading" data-i18n="menuTodayTitle"></div>
+          <div class="menuStatus" id="menuTodayStatus"></div>
+        </div>
+      </button>
+      <h2 class="menuHistoryTitle" data-i18n="menuHistoryTitle"></h2>
+      <div class="menuHistorySubtitle" data-i18n="menuHistorySubtitle"></div>
+      <div class="menuHistoryStrip" id="menuHistoryStrip"></div>
+      <button type="button" class="menuArchiveBtn" id="menuArchiveBtn" data-i18n="menuArchiveButton"></button>
+    </div>
+
+    <div class="archiveOverlay" id="archiveOverlay">
+      <div class="archiveHeader">
+        <div>
+          <h1 class="archiveTitle" data-i18n="archiveTitle"></h1>
+          <div class="archiveSubtitle" data-i18n="archiveSubtitle"></div>
+        </div>
+        <button type="button" class="archiveCloseBtn" id="archiveCloseBtn" data-i18n-aria="archiveCloseLabel">✕</button>
+      </div>
+      <div class="archiveGrid" id="archiveGrid"></div>
+    </div>
+
+    <div class="homeBtn zoomBtn" id="homeBtn" role="button" tabindex="0" data-i18n-aria="backToMenuLabel">←</div>
+    <div class="numbersToggleBtn zoomBtn" id="numbersToggleBtn" role="button" tabindex="0" aria-pressed="false" data-i18n-aria="numbersToggleLabel">🔢</div>
+
+    <div class="fitWarning" id="fitWarning" data-i18n="fitWarning"></div>
+    <div class="topbar">
+      <!-- Deliberately doesn't show the painting's title/artist — that's
+           part of the game: guess what you're painting as you go. The real
+           title is revealed in the trivia panel on completion instead. The
+           puzzle's serial number is shown though (set by setPuzzleTitle) —
+           it doesn't spoil anything, and makes it obvious which puzzle
+           you're looking at after opening one from the Archive/history. -->
+      <div class="title" id="puzzleTitle"></div>
+      <div class="hint" data-i18n="topbarHint"></div>
     </div>
 
     <div class="canvas">
       <div class="svgWrap" id="svgWrap">
-        <div class="loading" id="loading">Loading…</div>
+        <div class="loading" id="loading" data-i18n="loading"></div>
       </div>
+    </div>
+
+    <div class="zoomHint" id="zoomHint">
+      <div class="zoomHintIcon">🤏</div>
+      <div class="zoomHintText" data-i18n="zoomHintText"></div>
+    </div>
+
+    <div class="zoomControls" id="zoomControls">
+      <div class="zoomBtn" id="zoomInBtn" role="button" tabindex="0" data-i18n-aria="zoomInLabel">+</div>
+      <div class="zoomBtn" id="zoomOutBtn" role="button" tabindex="0" data-i18n-aria="zoomOutLabel">–</div>
+      <div class="zoomBtn" id="zoomResetBtn" role="button" tabindex="0" data-i18n-aria="zoomResetLabel">⤢</div>
     </div>
 
     <div class="palette">
       <div class="paletteHeader">
-        <div class="selected" id="selectedLabel">Selected: none</div>
+        <div class="selectedGroup">
+          <div class="selectedChip" id="selectedChip"></div>
+          <div class="selected" id="selectedLabel" data-i18n="selectedNone"></div>
+        </div>
+        <div class="hintBtn" id="hintBtn" role="button" tabindex="0" data-i18n-aria="hintButtonLabel"></div>
       </div>
-      <div class="swatches" id="swatches"></div>
+      <div class="swatchesWrap">
+        <div class="swatches" id="swatches"></div>
+        <div class="edgeFade left" id="swatchFadeLeft" aria-hidden="true">‹</div>
+        <div class="edgeFade right" id="swatchFadeRight" aria-hidden="true">›</div>
+      </div>
     </div>
   </div>
 
+  <script src="config.js"></script>
   <script>
-    // Add more paintings here (must exist as paintings/<name>.svg)
-    const PAINTINGS = ['paintbynumbers'];
+    // SUPABASE_URL / SUPABASE_ANON_KEY come from config.js (checked in for local dev,
+    // swap per environment).
+    const SUPABASE_URL = window.PNB_CONFIG.SUPABASE_URL;
+    const SUPABASE_ANON_KEY = window.PNB_CONFIG.SUPABASE_ANON_KEY;
 
-    // Palette colors (0–63).
-    // We embed these to avoid the browser "tainted canvas" security error that can
-    // happen when reading pixels from images on some hosting/CORS setups.
-    const PALETTE = [{"num":0,"rgb":[33,26,23]},{"num":1,"rgb":[41,39,38]},{"num":2,"rgb":[52,36,29]},{"num":3,"rgb":[51,49,47]},{"num":4,"rgb":[68,61,54]},{"num":5,"rgb":[55,60,62]},{"num":6,"rgb":[55,73,82]},{"num":7,"rgb":[74,74,68]},{"num":8,"rgb":[75,82,86]},{"num":9,"rgb":[66,86,97]},{"num":10,"rgb":[76,96,106]},{"num":11,"rgb":[76,90,96]},{"num":12,"rgb":[90,96,100]},{"num":13,"rgb":[86,91,93]},{"num":14,"rgb":[85,101,110]},{"num":15,"rgb":[66,91,108]},{"num":16,"rgb":[75,101,114]},{"num":17,"rgb":[56,85,104]},{"num":18,"rgb":[84,88,78]},{"num":19,"rgb":[82,108,121]},{"num":20,"rgb":[95,108,118]},{"num":21,"rgb":[97,116,127]},{"num":22,"rgb":[110,128,135]},{"num":23,"rgb":[106,111,114]},{"num":24,"rgb":[98,103,106]},{"num":25,"rgb":[96,99,92]},{"num":26,"rgb":[105,110,99]},{"num":27,"rgb":[97,95,79]},{"num":28,"rgb":[111,117,123]},{"num":29,"rgb":[115,117,111]},{"num":30,"rgb":[121,125,125]},{"num":31,"rgb":[127,134,136]},{"num":32,"rgb":[125,122,110]},{"num":33,"rgb":[135,136,126]},{"num":34,"rgb":[138,142,142]},{"num":35,"rgb":[149,149,141]},{"num":36,"rgb":[105,101,86]},{"num":37,"rgb":[150,145,119]},{"num":38,"rgb":[168,161,143]},{"num":39,"rgb":[135,131,111]},{"num":40,"rgb":[158,159,155]},{"num":41,"rgb":[168,156,122]},{"num":42,"rgb":[149,139,102]},{"num":43,"rgb":[147,151,151]},{"num":44,"rgb":[188,166,128]},{"num":45,"rgb":[185,155,106]},{"num":46,"rgb":[213,177,120]},{"num":47,"rgb":[168,141,90]},{"num":48,"rgb":[154,126,68]},{"num":49,"rgb":[176,171,160]},{"num":50,"rgb":[221,196,147]},{"num":51,"rgb":[117,118,95]},{"num":52,"rgb":[164,148,107]},{"num":53,"rgb":[142,96,67]},{"num":54,"rgb":[133,124,98]},{"num":55,"rgb":[117,107,78]},{"num":56,"rgb":[132,118,80]},{"num":57,"rgb":[147,132,88]},{"num":58,"rgb":[92,82,65]},{"num":59,"rgb":[88,64,48]},{"num":60,"rgb":[126,101,52]},{"num":61,"rgb":[109,76,47]},{"num":62,"rgb":[71,49,38]},{"num":63,"rgb":[116,87,65]}];
+    // UI language. Defaults to Danish; set window.PNB_CONFIG.LANG in config.js
+    // to switch (falls back to Danish if that language's file is missing).
+    // Translation strings live in i18n/<lang>.json, not hardcoded here, so
+    // adding a language later is just adding a new JSON file.
+    const LANG = (window.PNB_CONFIG && window.PNB_CONFIG.LANG) || 'da';
+    const FALLBACK_LANG = 'da';
+    let I18N = {};
+
+    // Toggle between the technical debug banner (development, the default)
+    // and a short, translated "something went wrong" popup with no
+    // technical detail (production). Set window.PNB_CONFIG.ENV = 'production'
+    // in config.js for real deployments.
+    const IS_PRODUCTION = !!(window.PNB_CONFIG && window.PNB_CONFIG.ENV === 'production');
+
+    async function loadTranslations(lang) {
+      try {
+        const res = await fetch(`i18n/${lang}.json`, { cache: 'no-cache' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        if (lang !== FALLBACK_LANG) {
+          console.warn(`Falling back to "${FALLBACK_LANG}" translations (couldn't load "${lang}"):`, err);
+          return loadTranslations(FALLBACK_LANG);
+        }
+        console.error('Failed to load translations; falling back to raw keys.', err);
+        return {};
+      }
+    }
+
+    // Simple {{placeholder}} substitution — no plural rules, no nesting.
+    // Falls back to the raw key so a missing translation is visible/obvious
+    // rather than silently blank.
+    function t(key, vars) {
+      let str = I18N[key] || key;
+      if (vars) {
+        for (const k of Object.keys(vars)) str = str.split(`{{${k}}}`).join(String(vars[k]));
+      }
+      return str;
+    }
+
+    function applyStaticTranslations() {
+      document.title = t('appTitle');
+      for (const el of document.querySelectorAll('[data-i18n]')) {
+        el.textContent = t(el.dataset.i18n);
+      }
+      for (const el of document.querySelectorAll('[data-i18n-aria]')) {
+        el.setAttribute('aria-label', t(el.dataset.i18nAria));
+      }
+      for (const el of document.querySelectorAll('[data-i18n-alt]')) {
+        el.setAttribute('alt', t(el.dataset.i18nAlt));
+      }
+    }
+
+    // Keeps --topbar-h in sync with the topbar's real rendered height, which
+    // varies with translated text length (one line in English, maybe two in
+    // a longer language) and viewport width. .canvas/.fitWarning read this
+    // var to offset around the topbar, so a hardcoded height would either
+    // truncate text or let it overlap the canvas depending on language.
+    // Keeps --app-vh/--app-vw (1% of the real viewport height/width) in sync
+    // so .app's size doesn't get stuck at a stale value across a navigation
+    // or orientation change (see the comment on .app). Listens on resize,
+    // orientationchange, and visualViewport's resize (fires slightly ahead
+    // of window resize on iOS and catches on-screen-keyboard changes too).
+    function wireViewportSizeSync() {
+      const sync = () => {
+        document.documentElement.style.setProperty('--app-vh', `${window.innerHeight * 0.01}px`);
+        document.documentElement.style.setProperty('--app-vw', `${window.innerWidth * 0.01}px`);
+      };
+      sync();
+      window.addEventListener('resize', sync);
+      window.addEventListener('orientationchange', sync);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', sync);
+      }
+    }
+
+    function wireTopbarHeightSync() {
+      const topbar = document.querySelector('.topbar');
+      if (!topbar || typeof ResizeObserver === 'undefined') return;
+      const sync = () => {
+        document.documentElement.style.setProperty('--topbar-h', `${Math.ceil(topbar.getBoundingClientRect().height)}px`);
+      };
+      new ResizeObserver(sync).observe(topbar);
+      sync();
+    }
+
+    // Shows a technical, untranslated debug banner across the top of the
+    // screen — see the .debugBanner CSS comment for why this exists and why
+    // it's deliberately not the polished i18n'd error copy. Also force-hides
+    // both splash screens: a hung/failed network call otherwise leaves the
+    // user staring at the splash animation forever, since the code that
+    // normally hides it (boot()'s `finally`) only runs once the awaited
+    // call actually settles.
+    function showDebugBanner(message) {
+      console.error('[debug]', message);
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      // Production builds never show this raw, untranslated banner to end
+      // users — boot()'s catch shows showProductionError(code) instead.
+      if (IS_PRODUCTION) return;
+      const banner = document.getElementById('debugBanner');
+      const textEl = document.getElementById('debugBannerText');
+      if (!banner || !textEl) return;
+      textEl.textContent = textEl.textContent ? `${textEl.textContent}\n\n${message}` : message;
+      banner.classList.add('show');
+    }
+
+    function wireDebugBanner() {
+      const closeBtn = document.getElementById('debugBannerClose');
+      const banner = document.getElementById('debugBanner');
+      if (!closeBtn || !banner) return;
+      closeBtn.addEventListener('click', () => banner.classList.remove('show'));
+    }
+
+    // Production-mode counterpart to the debug banner: a short, translated,
+    // technical-detail-free popup ("We're sorry, there was an error. {code}")
+    // so end users never see raw error messages, stack traces, or URLs (e.g.
+    // SUPABASE_URL). `code` is a stable short string identifying which check
+    // failed (see the `code` set on each thrown Error), useful for support
+    // requests without exposing internals.
+    function showProductionError(code) {
+      console.error('[production error]', code);
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      const overlay = document.getElementById('prodErrorOverlay');
+      const textEl = document.getElementById('prodErrorText');
+      if (!overlay || !textEl) return;
+      textEl.textContent = t('errorGenericProduction', { code: code || 'UNKNOWN' });
+      overlay.classList.add('show');
+    }
+
+    function wireProductionErrorOverlay() {
+      const closeBtn = document.getElementById('prodErrorClose');
+      const overlay = document.getElementById('prodErrorOverlay');
+      if (!closeBtn || !overlay) return;
+      closeBtn.addEventListener('click', () => overlay.classList.remove('show'));
+    }
+
+    // fetch() has no built-in timeout — against an unreachable host (e.g. a
+    // stale LAN IP in config.js after switching networks) it can hang far
+    // longer than a user will wait, which reads as "stuck on the splash
+    // screen" with no indication why. This fails fast instead, with an
+    // error message that names the URL so a bad SUPABASE_URL is obvious.
+    async function fetchWithTimeout(url, options, timeoutMs, label) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw new Error(`Timed out after ${(timeoutMs / 1000).toFixed(0)}s contacting ${label || url}`);
+        }
+        throw new Error(`Network request failed for ${label || url}: ${err.message || err}`);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    function storagePublicUrl(path) {
+      return `${SUPABASE_URL}/storage/v1/object/public/puzzles/${path}`;
+    }
+
+    function supabaseHeaders() {
+      return {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      };
+    }
+
+    async function supabaseSelect(table, params) {
+      const url = `${SUPABASE_URL}/rest/v1/${table}?${new URLSearchParams(params).toString()}`;
+      let res;
+      try {
+        res = await fetchWithTimeout(url, { headers: supabaseHeaders() }, 10000, url);
+      } catch (err) {
+        showDebugBanner(`Supabase request failed:\n${url}\n\n${err.message || err}`);
+        err.code = err.code || 'SUPABASE_REQUEST_FAILED';
+        throw err;
+      }
+      if (!res.ok) {
+        showDebugBanner(`Supabase request returned HTTP ${res.status}:\n${url}`);
+        throw Object.assign(new Error(t('errorLoadPuzzleFailed', { status: res.status })), { code: 'LOAD_PUZZLE_FAILED' });
+      }
+      return res.json();
+    }
+
+    function mapPuzzleRow(puzzlesRow) {
+      return {
+        puzzleId: puzzlesRow.id,
+        palette: puzzlesRow.palette, // [{num, rgb: [r,g,b]}, ...] — same shape the UI already expects
+        svgUrl: storagePublicUrl(puzzlesRow.svg_storage_path),
+        referenceImageUrl: storagePublicUrl(puzzlesRow.reference_png_storage_path),
+        title: puzzlesRow.paintings ? puzzlesRow.paintings.title : '',
+        artist: puzzlesRow.paintings ? puzzlesRow.paintings.artist : '',
+        smkObjectNumber: puzzlesRow.paintings ? puzzlesRow.paintings.smk_object_number : '',
+        // Set only when the generator backend's optional AI-enrichment step (web
+        // search + LLM, see paintbynumbersgenerator-master/backend/src/enrichment.ts)
+        // ran successfully for this painting — null/absent just means the trivia panel
+        // skips that section (see renderTriviaPanel).
+        aiSummary: puzzlesRow.paintings ? puzzlesRow.paintings.ai_summary : null,
+      };
+    }
+
+    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number,ai_summary)';
+
+    // The "current puzzle" is whichever rotation_schedule row's active_from/active_until
+    // window contains right now (see pnb-database's schema docs). RLS on the anon key
+    // only ever exposes published puzzles.
+    async function fetchActivePuzzle() {
+      const nowIso = new Date().toISOString();
+      const rows = await supabaseSelect('rotation_schedule', {
+        select: `id,active_from,active_until,puzzles(${PUZZLE_FIELDS})`,
+        active_from: `lte.${nowIso}`,
+        active_until: `gte.${nowIso}`,
+        order: 'active_from.desc',
+        limit: '1',
+      });
+      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'NO_ACTIVE_PUZZLE' });
+      return mapPuzzleRow(rows[0].puzzles);
+    }
+
+    async function fetchPuzzleById(puzzleId) {
+      const rows = await supabaseSelect('puzzles', {
+        select: PUZZLE_FIELDS,
+        id: `eq.${puzzleId}`,
+        limit: '1',
+      });
+      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'PUZZLE_NOT_FOUND' });
+      return mapPuzzleRow(rows[0]);
+    }
+
+    // A puzzle's number (its 1-based position in the full rotation schedule,
+    // same definition as fetchNumberedPuzzleHistory) shown in the topbar so
+    // reopening an old puzzle from the menu/Archive makes it obvious which
+    // one you're looking at. Doesn't spoil title/artist — just a serial
+    // number — so unlike those it's safe to show immediately.
+    async function fetchPuzzleNumber(puzzleId) {
+      const rows = await supabaseSelect('rotation_schedule', {
+        select: 'puzzles(id)',
+        order: 'active_from.asc',
+        limit: '1000',
+      });
+      const idx = rows.findIndex((row) => row.puzzles && row.puzzles.id === puzzleId);
+      return idx === -1 ? null : idx + 1;
+    }
+
+    function setPuzzleTitle(number) {
+      const el = document.getElementById('puzzleTitle');
+      if (number == null) {
+        if (el) el.textContent = '';
+        return;
+      }
+      const label = t('puzzleNumberTitle', { number });
+      if (el) el.textContent = label;
+      document.title = label;
+    }
+
+    // Past puzzles, newest first, each labeled by its release order ("#N")
+    // rather than its date. Deliberately doesn't select the painting's
+    // title/artist: history rows are labeled by number only, so browsing the
+    // list itself doesn't spoil a puzzle before it's opened.
+    //
+    // A puzzle's number is its 1-based position in the *entire* rotation
+    // schedule ordered by active_from ascending (#1 = the very first puzzle
+    // ever scheduled), so it stays stable as new puzzles get appended to the
+    // end every week — it's computed from position, not stored, so this always
+    // fetches the full schedule (including not-yet-active future rows, which
+    // are then filtered out below) rather than just the "limit" requested.
+    async function fetchNumberedPuzzleHistory() {
+      const rows = await supabaseSelect('rotation_schedule', {
+        select: 'id,active_until,puzzles(id,reference_png_storage_path)',
+        order: 'active_from.asc',
+        limit: '1000',
+      });
+      const nowIso = new Date().toISOString();
+      const numbered = rows.map((row, i) => ({
+        puzzleId: row.puzzles.id,
+        number: i + 1,
+        activeUntil: row.active_until,
+        referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
+      }));
+      return numbered.filter((row) => row.activeUntil <= nowIso).reverse();
+    }
+
+    // The menu's history strip: on a narrow phone screen this is one
+    // horizontally-scrolling row, so a handful is plenty — but on a wider
+    // screen (see the .menuHistoryStrip media query) it wraps into several
+    // rows, so a larger recent-history slice actually fills the space
+    // instead of leaving it mostly empty. The full history is always one tap
+    // away via the Archive regardless.
+    async function fetchRecentPuzzleHistory() {
+      return (await fetchNumberedPuzzleHistory()).slice(0, 20);
+    }
+
+    // The full archive: every past puzzle, flat (no date-based grouping —
+    // puzzles are numbered, not dated, so there's nothing to group by).
+    function fetchPuzzleArchive() {
+      return fetchNumberedPuzzleHistory();
+    }
+
+    // Per-puzzle painting progress, kept client-side only (no user accounts).
+    // { [puzzleId]: { painted: number[], completed: boolean } } — `painted`
+    // holds indices into the puzzle's `paintable` array (see loadAndShow),
+    // stable because a given puzzleId's SVG never changes.
+    function loadProgressStore() {
+      try {
+        return JSON.parse(localStorage.getItem('pnb_progress_v1')) || {};
+      } catch (_e) {
+        return {};
+      }
+    }
+
+    function saveProgressStore(store) {
+      try {
+        localStorage.setItem('pnb_progress_v1', JSON.stringify(store));
+      } catch (_e) { /* ignore (e.g. private browsing) */ }
+    }
+
+    function getPuzzleProgress(puzzleId) {
+      const store = loadProgressStore();
+      return store[puzzleId] || { painted: [], completed: false };
+    }
+
+    function markPathPainted(puzzleId, index) {
+      const store = loadProgressStore();
+      const entry = store[puzzleId] || { painted: [], completed: false };
+      if (!entry.painted.includes(index)) entry.painted.push(index);
+      store[puzzleId] = entry;
+      saveProgressStore(store);
+    }
+
+    function markPuzzleCompleted(puzzleId) {
+      const store = loadProgressStore();
+      const entry = store[puzzleId] || { painted: [], completed: false };
+      entry.completed = true;
+      store[puzzleId] = entry;
+      saveProgressStore(store);
+    }
+
+    // Whether to hide the number label on regions that are already painted —
+    // a display preference, not per-puzzle progress, so it's a single flag
+    // rather than something keyed by puzzleId like the progress store above.
+    function loadHideNumbersPref() {
+      try { return localStorage.getItem('pnb_hide_painted_numbers') === '1'; } catch (_e) { return false; }
+    }
+
+    function saveHideNumbersPref(value) {
+      try { localStorage.setItem('pnb_hide_painted_numbers', value ? '1' : '0'); } catch (_e) { /* ignore */ }
+    }
+
+    let hideNumbersEnabled = loadHideNumbersPref();
+    // The currently loaded puzzle's paintable paths, so the global toggle button
+    // (wired once, outside loadAndShow's per-puzzle closure) can re-apply the
+    // preference to whichever puzzle happens to be open.
+    let currentPaintable = [];
+
+    // The generator's SVGs draw each region's number as a `<g class="label">`
+    // immediately following its `<path>` sibling (confirmed in paintings/paintbynumbers.svg,
+    // which CLAUDE.md documents as structured the same way the generator backend emits) —
+    // there's no id/data-attribute link between the two, just this DOM adjacency.
+    function getPathLabel(path) {
+      const next = path.nextElementSibling;
+      return next && next.classList.contains('label') ? next : null;
+    }
+
+    function updateNumberVisibility(path) {
+      const label = getPathLabel(path);
+      if (!label) return;
+      label.style.display = (hideNumbersEnabled && path.dataset.painted === '1') ? 'none' : '';
+    }
+
+    function refreshAllNumberVisibility() {
+      for (const p of currentPaintable) updateNumberVisibility(p);
+    }
 
     function cssRgb(rgb) {
       return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
     }
-
-    // No canvas needed: palette is embedded above.
 
     function rgbKey(rgb) {
       return `${rgb[0]},${rgb[1]},${rgb[2]}`;
@@ -301,10 +1660,19 @@
       return [Number(m[1]), Number(m[2]), Number(m[3])];
     }
 
-    async function loadSvg(stem) {
-      const url = `paintings/${stem}.svg`;
-      const res = await fetch(url, { cache: 'no-cache' });
-      if (!res.ok) throw new Error(`Failed to load SVG (${res.status}): ${url}`);
+    async function loadSvg(url) {
+      let res;
+      try {
+        res = await fetchWithTimeout(url, { cache: 'no-cache' }, 15000, url);
+      } catch (err) {
+        showDebugBanner(`SVG request failed:\n${url}\n\n${err.message || err}`);
+        err.code = err.code || 'SVG_REQUEST_FAILED';
+        throw err;
+      }
+      if (!res.ok) {
+        showDebugBanner(`SVG request returned HTTP ${res.status}:\n${url}`);
+        throw Object.assign(new Error(t('errorLoadSvgFailed', { status: res.status, url })), { code: 'LOAD_SVG_FAILED' });
+      }
       const txt = await res.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(txt, 'image/svg+xml');
@@ -353,7 +1721,38 @@
       }
     }
 
-    function wirePanZoom(svg, wrapEl) {
+    // Belt-and-suspenders check: confirm the rendered element is actually fully
+    // contained within its wrapper (a couple of CSS px of rounding is fine). If it's
+    // ever not — a future regression, an unusual device viewport, etc. — surface a
+    // visible warning instead of silently letting the bottom get clipped off.
+    function checkFitsWithinWrap(el, wrapEl) {
+      const warningEl = document.getElementById('fitWarning');
+      if (!warningEl) return;
+      const elRect = el.getBoundingClientRect();
+      const wrapRect = wrapEl.getBoundingClientRect();
+      const tolerance = 1;
+      const fits =
+        elRect.width > 0 &&
+        elRect.height > 0 &&
+        elRect.top >= wrapRect.top - tolerance &&
+        elRect.left >= wrapRect.left - tolerance &&
+        elRect.bottom <= wrapRect.bottom + tolerance &&
+        elRect.right <= wrapRect.right + tolerance;
+      warningEl.classList.toggle('show', !fits);
+      if (!fits) {
+        console.warn('Puzzle does not fully fit its container', { elRect, wrapRect });
+      }
+    }
+
+    const MIN_ZOOM = 1;
+    const MAX_ZOOM = 5;
+
+    // Combines pan/zoom with tap-to-paint. Touch taps are detected directly
+    // from touchstart/touchend (movement + duration thresholds) and painted
+    // immediately, rather than waiting on a browser-synthesized 'click' —
+    // which after our own pan/zoom transform is often delayed or dropped
+    // entirely, making taps feel unresponsive on phones/tablets.
+    function wireCanvasInteractions(svg, wrapEl, paletteSelection, onCorrectPaint) {
       // Pan/zoom state applies a CSS transform to the SVG element.
       const state = {
         scale: 1,
@@ -368,7 +1767,71 @@
         startDist: 0,
         pinchSvgX: 0,
         pinchSvgY: 0,
+        tapStartX: 0,
+        tapStartY: 0,
+        tapStartTime: 0,
+        tapMoved: false,
+        suppressClickUntil: 0,
       };
+
+      const TAP_MOVE_THRESHOLD = 14; // px
+      const TAP_MAX_DURATION = 350; // ms
+      const TAP_TOLERANCE_RINGS = [0, 8, 14, 22]; // screen px — expanding search radius for a near-miss tap
+      const TAP_TOLERANCE_DIRECTIONS = 8;
+
+      // A tap rarely lands on the exact pixel the user meant, and a number
+      // label's own hit area can sit exactly on top of the region it labels
+      // (elementFromPoint returns whichever the browser deems "on top" there,
+      // which can be the text node, not the path under it). So rather than a
+      // single exact-point hit test, sample a small expanding ring of nearby
+      // points and prefer whichever path matches the selected color — this is
+      // what makes a near-miss tap still paint the intended region instead of
+      // requiring the user to hunt for the exact spot.
+      function findTappablePath(x, y, selectedNum) {
+        let fallback = null;
+        for (const radius of TAP_TOLERANCE_RINGS) {
+          const points = radius === 0
+            ? [[x, y]]
+            : Array.from({ length: TAP_TOLERANCE_DIRECTIONS }, (_, i) => {
+                const angle = (i / TAP_TOLERANCE_DIRECTIONS) * Math.PI * 2;
+                return [x + Math.cos(angle) * radius, y + Math.sin(angle) * radius];
+              });
+          for (const [px, py] of points) {
+            const stack = document.elementsFromPoint(px, py);
+            const path = stack.find((el) => el.tagName === 'path');
+            if (!path) continue;
+            if (selectedNum != null && path.dataset.colorNum === selectedNum) return path;
+            if (!fallback) fallback = path;
+          }
+        }
+        return fallback;
+      }
+
+      function attemptPaint(path) {
+        if (!path) return;
+        const selectedNum = paletteSelection.getSelectedNum();
+        const selectedRgb = paletteSelection.getSelectedRgb();
+        if (selectedNum == null || selectedRgb == null) return;
+
+        const needed = path.dataset.colorNum;
+        if (needed !== selectedNum) {
+          if (needed !== '-1') {
+            path.classList.remove('pnb-wrong');
+            // Force reflow so a rapid re-tap re-triggers the animation.
+            void path.offsetWidth;
+            path.classList.add('pnb-wrong');
+          }
+          return;
+        }
+        if (path.dataset.painted === '1') return;
+        path.style.fill = selectedRgb;
+        path.dataset.painted = '1';
+        // Only on a real live tap — cheat-fill and progress-restoration also
+        // paint via onCorrectPaint, but animating dozens of regions at once
+        // for those would be noisy rather than a satisfying per-tap reaction.
+        path.classList.add('pnb-correct');
+        if (typeof onCorrectPaint === 'function') onCorrectPaint(path);
+      }
 
       function apply() {
         svg.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
@@ -396,9 +1859,7 @@
       }
 
       function setScale(nextScale, centerX, centerY) {
-        const minScale = 1;
-        const maxScale = 6;
-        const s = Math.max(minScale, Math.min(maxScale, nextScale));
+        const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextScale));
 
         // Keep the point under (centerX, centerY) stable.
         const svgX = (centerX - state.tx) / state.scale;
@@ -410,6 +1871,28 @@
         apply();
       }
 
+      // Zoom in/out one step, centered on the wrap's visible middle — used by
+      // the on-screen +/- buttons so zoom feels controlled and deliberate.
+      function stepScale(factor) {
+        const w = wrapEl.clientWidth;
+        const h = wrapEl.clientHeight;
+        setScale(state.scale * factor, w / 2, h / 2);
+      }
+
+      // Pan/zoom so the given point (in the SVG element's own untransformed
+      // CSS-pixel box) is centered in the wrap, at the given scale. Used by
+      // the hint feature to jump to an unpainted region.
+      function focusOnLocalPoint(lx, ly, targetScale) {
+        const w = wrapEl.clientWidth;
+        const h = wrapEl.clientHeight;
+        const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetScale));
+        state.scale = s;
+        state.tx = w / 2 - s * lx;
+        state.ty = h / 2 - s * ly;
+        clamp();
+        apply();
+      }
+
       // Reset to fit (scale=1, centered) after we have the final viewBox.
       function reset() {
         state.scale = 1;
@@ -417,6 +1900,12 @@
         state.ty = 0;
         clamp();
         apply();
+      }
+
+      function dismissZoomHint() {
+        const el = document.getElementById('zoomHint');
+        if (el) el.classList.remove('show');
+        try { localStorage.setItem('pnb_zoom_hint_seen', '1'); } catch (_e) { /* ignore */ }
       }
 
       // Touch events (best support on iPad Safari)
@@ -435,6 +1924,7 @@
       }
 
       svg.addEventListener('touchstart', (e) => {
+        dismissZoomHint();
         if (e.touches.length === 1) {
           state.mode = 'pan';
           const rect = wrapEl.getBoundingClientRect();
@@ -442,7 +1932,15 @@
           state.startY = e.touches[0].clientY - rect.top;
           state.startTx = state.tx;
           state.startTy = state.ty;
+
+          // Tap tracking (independent of pan, which only kicks in once the
+          // finger actually moves past the threshold below).
+          state.tapStartX = e.touches[0].clientX;
+          state.tapStartY = e.touches[0].clientY;
+          state.tapStartTime = Date.now();
+          state.tapMoved = false;
         } else if (e.touches.length === 2) {
+          state.tapMoved = true; // a second finger means this isn't a tap
           state.mode = 'pinch';
           state.startScale = state.scale;
           state.startTx = state.tx;
@@ -466,6 +1964,13 @@
           state.ty = state.startTy + (y - state.startY);
           clamp();
           apply();
+          // Judge "was this a tap or a drag" by how far the artwork actually
+          // moved on screen (post-clamp), not raw finger movement. At the
+          // default zoom level clamp() pins tx/ty in place, so ordinary
+          // finger jitter during a tap never gets misread as a drag.
+          const movedX = Math.abs(state.tx - state.startTx);
+          const movedY = Math.abs(state.ty - state.startTy);
+          if (movedX > TAP_MOVE_THRESHOLD || movedY > TAP_MOVE_THRESHOLD) state.tapMoved = true;
         } else if (state.mode === 'pinch' && e.touches.length === 2) {
           const d = dist(e.touches[0], e.touches[1]);
           if (!state.startDist) return;
@@ -473,9 +1978,7 @@
           const c = getCenter(e.touches[0], e.touches[1]);
 
           // Scale around pinch center (using the SVG-space point captured at start).
-          const minScale = 1;
-          const maxScale = 6;
-          const s = Math.max(minScale, Math.min(maxScale, nextScale));
+          const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextScale));
           state.scale = s;
           state.tx = c.x - state.pinchSvgX * state.scale;
           state.ty = c.y - state.pinchSvgY * state.scale;
@@ -484,16 +1987,33 @@
         }
       }, { passive: false });
 
-      svg.addEventListener('touchend', (_e) => {
+      svg.addEventListener('touchend', (e) => {
+        const wasPan = state.mode === 'pan';
         state.mode = null;
+        if (!wasPan || state.tapMoved) return;
+        if (Date.now() - state.tapStartTime > TAP_MAX_DURATION) return;
+        // A clean, un-moved, quick single-finger touch: paint immediately
+        // instead of waiting on a synthetic click event.
+        const path = findTappablePath(state.tapStartX, state.tapStartY, paletteSelection.getSelectedNum());
+        if (path) attemptPaint(path);
+        state.suppressClickUntil = Date.now() + 600;
       }, { passive: true });
       svg.addEventListener('touchcancel', (_e) => {
         state.mode = null;
       }, { passive: true });
 
+      // Mouse/keyboard/fallback path — ignored right after a touch tap already
+      // handled the paint, so a delayed synthetic click doesn't double-fire.
+      svg.addEventListener('click', (e) => {
+        if (Date.now() < state.suppressClickUntil) return;
+        const path = findTappablePath(e.clientX, e.clientY, paletteSelection.getSelectedNum());
+        if (path) attemptPaint(path);
+      });
+
       // Mouse wheel zoom (desktop)
       svg.addEventListener('wheel', (e) => {
         e.preventDefault();
+        dismissZoomHint();
         const rect = wrapEl.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -504,6 +2024,7 @@
       // Mouse drag pan (desktop)
       let mouseDown = false;
       svg.addEventListener('mousedown', (e) => {
+        dismissZoomHint();
         mouseDown = true;
         const rect = wrapEl.getBoundingClientRect();
         state.mode = 'pan';
@@ -533,7 +2054,7 @@
       });
 
       reset();
-      return { reset };
+      return { reset, setScale, stepScale, focusOnLocalPoint, getScale: () => state.scale };
     }
 
     function buildSwatches(palette) {
@@ -545,7 +2066,7 @@
         el.className = 'swatch';
         el.setAttribute('role', 'button');
         el.setAttribute('tabindex', '0');
-        el.setAttribute('aria-label', `Color ${c.num}`);
+        el.setAttribute('aria-label', t('colorAriaLabel', { num: c.num }));
         el.dataset.num = String(c.num);
         el.dataset.rgb = cssRgb(c.rgb);
 
@@ -563,24 +2084,30 @@
         count.dataset.num = String(c.num);
         counterByNum.set(c.num, count);
 
+        const check = document.createElement('div');
+        check.className = 'swatchCheck';
+        check.textContent = '✓';
+
         // Layout: number (top), color square (middle), counter (bottom)
         el.appendChild(num);
         el.appendChild(inner);
         el.appendChild(count);
+        el.appendChild(check);
         swatches.appendChild(el);
       }
 
-      // Add a cheat button at the end
+      // Add a cheat button at the end — always after any completed colors.
       const cheat = document.createElement('div');
       cheat.className = 'swatch cheat';
+      cheat.style.order = '100';
       cheat.id = 'cheatBtn';
       cheat.setAttribute('role', 'button');
       cheat.setAttribute('tabindex', '0');
-      cheat.setAttribute('aria-label', 'Cheat: fill all remaining regions');
+      cheat.setAttribute('aria-label', t('cheatAriaLabel'));
 
       const cheatTop = document.createElement('div');
       cheatTop.className = 'swatchNum';
-      cheatTop.textContent = 'CHEAT';
+      cheatTop.textContent = t('cheatTop');
 
       const cheatMid = document.createElement('div');
       cheatMid.className = 'swatchInner';
@@ -590,7 +2117,7 @@
 
       const cheatBottom = document.createElement('div');
       cheatBottom.className = 'swatchCount';
-      cheatBottom.textContent = 'Fill all';
+      cheatBottom.textContent = t('cheatBottom');
 
       cheat.appendChild(cheatTop);
       cheat.appendChild(cheatMid);
@@ -598,6 +2125,40 @@
       swatches.appendChild(cheat);
 
       return counterByNum;
+    }
+
+    // The swatch row scrolls horizontally, but on a narrow phone only ~4
+    // colors fit on screen at once — without a cue, it can look like the
+    // whole palette rather than a scrollable strip. Edge fades signal
+    // there's more in whichever direction still has content, and a one-time
+    // nudge scroll (per browser) makes the scrollability unmistakable.
+    function wireSwatchScrollHints(swatchesEl) {
+      const leftFade = document.getElementById('swatchFadeLeft');
+      const rightFade = document.getElementById('swatchFadeRight');
+      if (!leftFade || !rightFade) return;
+
+      function update() {
+        const hasOverflow = swatchesEl.scrollWidth > swatchesEl.clientWidth + 1;
+        leftFade.classList.toggle('show', hasOverflow && swatchesEl.scrollLeft > 4);
+        rightFade.classList.toggle(
+          'show',
+          hasOverflow && swatchesEl.scrollLeft < swatchesEl.scrollWidth - swatchesEl.clientWidth - 4
+        );
+      }
+
+      swatchesEl.addEventListener('scroll', update, { passive: true });
+      window.addEventListener('resize', update);
+      update();
+
+      let seen = false;
+      try { seen = localStorage.getItem('pnb_swatch_hint_seen') === '1'; } catch (_e) { /* ignore */ }
+      if (!seen && swatchesEl.scrollWidth > swatchesEl.clientWidth + 1) {
+        setTimeout(() => {
+          swatchesEl.scrollTo({ left: 46, behavior: 'smooth' });
+          setTimeout(() => swatchesEl.scrollTo({ left: 0, behavior: 'smooth' }), 550);
+        }, 500);
+        try { localStorage.setItem('pnb_swatch_hint_seen', '1'); } catch (_e) { /* ignore */ }
+      }
     }
 
     function setSwatchCount(counterByNum, colorNum, painted, total) {
@@ -611,12 +2172,12 @@
       el.textContent = `${painted}/${total}`;
       el.classList.remove('empty');
 
-      // When a color is fully completed, hide its swatch.
-      if (painted >= total) {
-        const swatch = el.closest('.swatch');
-        if (swatch && swatch.id !== 'cheatBtn') {
-          swatch.style.display = 'none';
-        }
+      // When a color is fully completed, move its swatch to the end of the
+      // row and mark it done instead of hiding it — keeps a visible record
+      // of progress rather than making colors vanish.
+      const swatch = el.closest('.swatch');
+      if (swatch && swatch.id !== 'cheatBtn') {
+        swatch.classList.toggle('done', painted >= total);
       }
     }
 
@@ -625,6 +2186,7 @@
       let selectedRgb = null;
 
       const selectedLabel = document.getElementById('selectedLabel');
+      const selectedChip = document.getElementById('selectedChip');
       const swatches = document.getElementById('swatches');
 
       function setSelected(el) {
@@ -632,7 +2194,12 @@
         el.classList.add('active');
         selectedNum = el.dataset.num;
         selectedRgb = el.dataset.rgb;
-        selectedLabel.textContent = `Selected: ${selectedNum}`;
+        selectedLabel.textContent = t('selectedNum', { num: selectedNum });
+        selectedChip.style.background = selectedRgb;
+        selectedChip.classList.add('show');
+        // Bring the chosen swatch into view — with many colors in the row,
+        // the active one can otherwise end up scrolled off to either side.
+        el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       }
 
       swatches.addEventListener('click', (e) => {
@@ -683,83 +2250,230 @@
       return svg;
     }
 
-    function wirePainting(svg, paletteSelection, onCorrectPaint) {
-      svg.addEventListener('click', (e) => {
-        const path = e.target.closest('path');
-        if (!path) return;
+    const SMK_API_BASE_URL = 'https://api.smk.dk/api/v1';
 
-        const selectedNum = paletteSelection.getSelectedNum();
-        const selectedRgb = paletteSelection.getSelectedRgb();
-        if (selectedNum == null || selectedRgb == null) return;
+    // SMK's /art items carry an `enrichment_url` (https://enrichment.api.smk.dk/api/enrichment/{object_number})
+    // pointing at a separate service with per-object computed data: MS Computer Vision
+    // tags, Wikidata links, color extraction, etc. Not every object has every type, and
+    // some objects have only empty stub records, so every lookup below is optional.
+    async function fetchEnrichment(enrichmentUrl) {
+      try {
+        const res = await fetch(enrichmentUrl);
+        if (!res.ok) return null;
+        const records = await res.json();
+        return Array.isArray(records) ? records : null;
+      } catch (err) {
+        console.error('SMK enrichment fetch failed', err);
+        return null;
+      }
+    }
 
-        const needed = path.dataset.colorNum;
-        if (needed === selectedNum) {
-          if (path.dataset.painted === '1') return;
-          path.style.fill = selectedRgb;
-          path.dataset.painted = '1';
-          if (typeof onCorrectPaint === 'function') onCorrectPaint(path);
+    // Real lookup against SMK's own open API (the same source the generator backend
+    // pulls paintings from), keyed by the painting's smk_object_number. SMK doesn't
+    // expose an art-movement/style field or a ready-made "fun fact", so those are
+    // assembled from the fields it does have (object type, technique/materials,
+    // the artist's lifespan, acquisition year), enriched with the enrichment API's
+    // Wikidata link and computer-vision tags where available.
+    async function fetchPaintingTrivia(objectNumber, title, artist) {
+      if (!objectNumber) throw new Error('No smk_object_number for this painting');
+
+      const params = new URLSearchParams({ object_number: objectNumber, lang: LANG === 'da' ? 'da' : 'en' });
+      const res = await fetch(`${SMK_API_BASE_URL}/art?${params.toString()}`);
+      if (!res.ok) throw new Error(`SMK API HTTP ${res.status}`);
+      const data = await res.json();
+      const item = data.items && data.items[0];
+      if (!item) throw new Error(`No SMK data for ${objectNumber}`);
+
+      const production = (item.production && item.production[0]) || {};
+      const year = (item.production_date && item.production_date[0] && item.production_date[0].period) || '';
+      const style = (item.object_names || []).map((o) => o.name).filter(Boolean).join(', ');
+      const mediumSource = item.techniques && item.techniques.length ? item.techniques : item.materials || [];
+      const medium = mediumSource.filter(Boolean).join(', ');
+
+      let period = '';
+      if (production.creator_date_of_birth && production.creator_date_of_death) {
+        period = t('triviaLifespan', {
+          birth: new Date(production.creator_date_of_birth).getFullYear(),
+          death: new Date(production.creator_date_of_death).getFullYear(),
+        });
+      }
+
+      const langSuffix = LANG === 'da' ? 'da' : 'en';
+      let tags = [];
+      let wikidataUrl = '';
+      if (item.enrichment_url) {
+        const enrichment = await fetchEnrichment(item.enrichment_url);
+        if (enrichment) {
+          const vision = enrichment.find((rec) => rec.type === 'msvisioncomponent');
+          if (vision && vision.data) {
+            tags = (vision.data[`tags_${langSuffix}`] || []).slice(0, 6);
+          }
+          const wikidata = enrichment.find((rec) => rec.type === 'wikidata');
+          if (wikidata && wikidata.data) {
+            wikidataUrl = wikidata.data[`wikidata_link_${langSuffix}_s`] || wikidata.data.wikidata_link_neutral_s || '';
+          }
         }
+      }
+
+      const artistName = artist || t('triviaArtistFallback');
+      const acquisitionYear = item.acquisition_date ? new Date(item.acquisition_date).getFullYear() : null;
+      let funFact = '';
+      if (tags.length) {
+        funFact = t('triviaFunFactTags', { tags: tags.join(', ') });
+      } else if (medium && acquisitionYear) {
+        funFact = t('triviaFunFactAcquired', { artist: artistName, medium, year: acquisitionYear });
+      } else if (medium) {
+        funFact = t('triviaFunFactMedium', { artist: artistName, medium });
+      }
+
+      return { year, period, style, medium, funFact, wikidataUrl };
+    }
+
+    function renderTriviaPanel(svgWrap, puzzle) {
+      const panel = document.createElement('div');
+      panel.className = 'triviaPanel';
+      panel.id = 'triviaPanel';
+
+      const close = document.createElement('div');
+      close.className = 'triviaClose';
+      close.textContent = '×';
+      close.setAttribute('role', 'button');
+      close.setAttribute('aria-label', t('triviaCloseLabel'));
+      close.addEventListener('click', () => panel.classList.remove('show'));
+
+      const title = document.createElement('div');
+      title.className = 'triviaTitle';
+      title.textContent = puzzle.title || t('triviaUntitled');
+
+      const artist = document.createElement('div');
+      artist.className = 'triviaArtist';
+      artist.textContent = puzzle.artist || '';
+
+      const loading = document.createElement('div');
+      loading.className = 'triviaLoading';
+      loading.textContent = t('triviaLoading');
+
+      panel.appendChild(close);
+      panel.appendChild(title);
+      panel.appendChild(artist);
+
+      // AI-researched blurb: generated once server-side when the painting was first
+      // pulled (see paintbynumbersgenerator-master/backend/src/enrichment.ts), stored
+      // on the painting row — no network call needed here, and no "loading" state,
+      // unlike the trivia fetch below. Always paired with a disclaimer, since it can
+      // be wrong.
+      if (puzzle.aiSummary) {
+        const aiBlurb = document.createElement('div');
+        aiBlurb.className = 'triviaAiBlurb';
+
+        const aiText = document.createElement('div');
+        aiText.textContent = puzzle.aiSummary;
+        aiBlurb.appendChild(aiText);
+
+        const aiDisclaimer = document.createElement('div');
+        aiDisclaimer.className = 'triviaAiDisclaimer';
+        aiDisclaimer.textContent = t('triviaAiDisclaimer');
+        aiBlurb.appendChild(aiDisclaimer);
+
+        panel.appendChild(aiBlurb);
+      }
+
+      panel.appendChild(loading);
+
+      function renderTriviaDetails(trivia) {
+        loading.remove();
+
+        if (trivia.wikidataUrl && puzzle.artist) {
+          artist.textContent = '';
+          const link = document.createElement('a');
+          link.href = trivia.wikidataUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = puzzle.artist;
+          artist.appendChild(link);
+        }
+
+        const grid = document.createElement('dl');
+        grid.className = 'triviaGrid';
+        const rows = [
+          [t('triviaYear'), trivia.year],
+          [t('triviaPeriod'), trivia.period],
+          [t('triviaStyle'), trivia.style],
+          [t('triviaMedium'), trivia.medium],
+        ];
+        for (const [label, value] of rows) {
+          if (!value) continue;
+          const dt = document.createElement('dt');
+          dt.textContent = label;
+          const dd = document.createElement('dd');
+          dd.textContent = value;
+          grid.appendChild(dt);
+          grid.appendChild(dd);
+        }
+        panel.appendChild(grid);
+
+        if (trivia.funFact) {
+          const fact = document.createElement('div');
+          fact.className = 'triviaFact';
+          fact.textContent = trivia.funFact;
+          panel.appendChild(fact);
+        }
+      }
+
+      svgWrap.appendChild(panel);
+
+      requestAnimationFrame(() => panel.classList.add('show'));
+
+      fetchPaintingTrivia(puzzle.smkObjectNumber, puzzle.title, puzzle.artist).then((trivia) => {
+        renderTriviaDetails(trivia);
+      }).catch((err) => {
+        console.error(err);
+        loading.textContent = t('triviaError');
       });
     }
 
-    function revealOriginalInWrap(svgWrap) {
+    function revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle) {
       const img = document.createElement('img');
       img.className = 'finalImage';
-      img.alt = 'Completed painting';
-      img.src = 'paintings/kroyer.png';
+      img.alt = t('finalImageAlt');
+      img.src = referenceImageUrl;
 
       svgWrap.innerHTML = '';
       svgWrap.appendChild(img);
 
       const show = () => {
         // Ensure we have at least one frame with opacity:0 before showing
-        requestAnimationFrame(() => img.classList.add('show'));
+        requestAnimationFrame(() => {
+          img.classList.add('show');
+          checkFitsWithinWrap(img, svgWrap);
+        });
       };
       if (img.complete) show();
       else img.addEventListener('load', show, { once: true });
 
-      // Hide the palette when complete.
+      // Hide the palette and zoom controls when complete.
       const paletteEl = document.querySelector('.palette');
       if (paletteEl) paletteEl.style.display = 'none';
+      const zoomControlsEl = document.getElementById('zoomControls');
+      if (zoomControlsEl) zoomControlsEl.style.display = 'none';
+
+      renderTriviaPanel(svgWrap, puzzle);
     }
 
-    function populatePaintingSelect() {
-      const sel = document.getElementById('paintingSelect');
-      sel.innerHTML = '';
-      for (const p of PAINTINGS) {
-        const opt = document.createElement('option');
-        opt.value = p;
-        opt.textContent = p;
-        sel.appendChild(opt);
-      }
-      return sel;
-    }
-
-    function getInitialPainting() {
-      const url = new URL(window.location.href);
-      const p = url.searchParams.get('painting');
-      if (p && PAINTINGS.includes(p)) return p;
-      return PAINTINGS[0];
-    }
-
-    function setUrlPainting(stem) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('painting', stem);
-      window.history.replaceState({}, '', url.toString());
-    }
-
-    async function main() {
+    // `puzzle` is resolved by boot() before calling in — either today's active
+    // puzzle or a specific past week the user picked from the menu.
+    async function main(puzzle) {
       const loading = document.getElementById('loading');
       const svgWrap = document.getElementById('svgWrap');
 
-      const paintingSelect = populatePaintingSelect();
-      const initial = getInitialPainting();
-      paintingSelect.value = initial;
-      setUrlPainting(initial);
+      loading.textContent = t('loadingPuzzle');
+      // Deliberately not shown until completion (see the trivia panel) —
+      // the painting's title/artist would spoil the surprise of seeing what
+      // you've been painting.
 
-      loading.textContent = 'Loading palette…';
-      const palette = PALETTE;
+      const palette = puzzle.palette;
       const counterByNum = buildSwatches(palette);
+      wireSwatchScrollHints(document.getElementById('swatches'));
       const paletteSelection = wirePaletteSelection();
       const cheatBtn = document.getElementById('cheatBtn');
       let cheatFn = null;
@@ -778,21 +2492,131 @@
       }
       wireCheat();
 
-      async function loadAndShow(stem) {
+      // Zoom controls (+/-/reset) — wired once; they call into whichever
+      // panzoom controller is currently active for the loaded puzzle.
+      let panzoomCtl = null;
+      function wireZoomControls() {
+        const inBtn = document.getElementById('zoomInBtn');
+        const outBtn = document.getElementById('zoomOutBtn');
+        const resetBtn = document.getElementById('zoomResetBtn');
+        const bind = (el, fn) => {
+          if (!el) return;
+          el.addEventListener('click', fn);
+          el.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            fn();
+          });
+        };
+        bind(inBtn, () => panzoomCtl && panzoomCtl.stepScale(1.6));
+        bind(outBtn, () => panzoomCtl && panzoomCtl.stepScale(1 / 1.6));
+        bind(resetBtn, () => panzoomCtl && panzoomCtl.reset());
+      }
+      wireZoomControls();
+
+      // Show the pinch-to-zoom hint once per browser, on first load only.
+      function maybeShowZoomHint() {
+        let seen = false;
+        try { seen = localStorage.getItem('pnb_zoom_hint_seen') === '1'; } catch (_e) { /* ignore */ }
+        if (seen) return;
+        const el = document.getElementById('zoomHint');
+        if (!el) return;
+        requestAnimationFrame(() => el.classList.add('show'));
+        setTimeout(() => {
+          el.classList.remove('show');
+          try { localStorage.setItem('pnb_zoom_hint_seen', '1'); } catch (_e) { /* ignore */ }
+        }, 3500);
+      }
+      maybeShowZoomHint();
+
+      // Hints: highlight and zoom to an unpainted region of the selected
+      // color. Limited per puzzle so it stays a nudge, not an autosolve.
+      const HINT_LIMIT = 5;
+      let hintsRemaining = HINT_LIMIT;
+      let hintTargets = { annotated: null };
+      const hintBtn = document.getElementById('hintBtn');
+
+      function updateHintBtnLabel() {
+        if (!hintBtn) return;
+        hintBtn.textContent = hintsRemaining > 0 ? t('hintButtonCount', { count: hintsRemaining }) : t('hintButtonNone');
+        if (hintsRemaining <= 0) hintBtn.setAttribute('disabled', 'true');
+        else hintBtn.removeAttribute('disabled');
+      }
+
+      function pathLocalCenter(svg, path) {
+        const vb = svg.viewBox.baseVal;
+        const bbox = path.getBBox();
+        const cx = bbox.x + bbox.width / 2;
+        const cy = bbox.y + bbox.height / 2;
+        const scaleFactor = Math.min(svg.clientWidth / vb.width, svg.clientHeight / vb.height);
+        const offsetX = (svg.clientWidth - vb.width * scaleFactor) / 2;
+        const offsetY = (svg.clientHeight - vb.height * scaleFactor) / 2;
+        return {
+          lx: offsetX + (cx - vb.x) * scaleFactor,
+          ly: offsetY + (cy - vb.y) * scaleFactor,
+        };
+      }
+
+      function useHint() {
+        if (hintsRemaining <= 0 || !panzoomCtl || !hintTargets.annotated) return;
+        const selectedNum = paletteSelection.getSelectedNum();
+        if (selectedNum == null) {
+          const label = document.getElementById('selectedLabel');
+          if (label) {
+            const prev = label.textContent;
+            label.textContent = t('pickColorFirst');
+            setTimeout(() => { label.textContent = prev; }, 1400);
+          }
+          return;
+        }
+        const candidate = hintTargets.annotated.querySelector(
+          `path[data-color-num="${selectedNum}"][data-painted="0"]`
+        );
+        if (!candidate) return;
+
+        hintsRemaining -= 1;
+        updateHintBtnLabel();
+
+        const { lx, ly } = pathLocalCenter(hintTargets.annotated, candidate);
+        panzoomCtl.focusOnLocalPoint(lx, ly, Math.min(4, MAX_ZOOM));
+        candidate.classList.remove('pnb-hint');
+        void candidate.offsetWidth;
+        candidate.classList.add('pnb-hint');
+        setTimeout(() => candidate.classList.remove('pnb-hint'), 2200);
+      }
+
+      if (hintBtn) {
+        hintBtn.addEventListener('click', useHint);
+        hintBtn.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          useHint();
+        });
+      }
+
+      async function loadAndShow(svgUrl, referenceImageUrl) {
         svgWrap.innerHTML = '';
+        const fitWarningEl = document.getElementById('fitWarning');
+        if (fitWarningEl) fitWarningEl.classList.remove('show');
         const msg = document.createElement('div');
         msg.className = 'loading';
-        msg.textContent = 'Loading painting…';
+        msg.textContent = t('loadingPainting');
         svgWrap.appendChild(msg);
 
         // Ensure palette is visible when starting/restarting a painting.
         const paletteEl = document.querySelector('.palette');
         if (paletteEl) paletteEl.style.display = '';
 
-        const svg = await loadSvg(stem);
+        const svg = await loadSvg(svgUrl);
+        pnbMark('pnb:svg-loaded');
         const annotated = annotateSvg(svg, palette);
+        pnbMark('pnb:svg-annotated');
         svgWrap.innerHTML = '';
         svgWrap.appendChild(annotated);
+
+        hintTargets.annotated = annotated;
+        hintsRemaining = HINT_LIMIT;
+        updateHintBtnLabel();
 
         // Completion tracking: count paintable regions once per load.
         const paintable = Array.from(annotated.querySelectorAll('path')).filter(p => p.dataset.colorNum && p.dataset.colorNum !== '-1');
@@ -802,15 +2626,17 @@
         // Per-color tracking for the palette UI.
         const totalByNum = new Map();
         const paintedByNum = new Map();
-        for (const p of paintable) {
+        paintable.forEach((p, i) => {
+          p.dataset.pnbIndex = String(i);
           const n = Number(p.dataset.colorNum);
           totalByNum.set(n, (totalByNum.get(n) || 0) + 1);
-        }
+        });
+        currentPaintable = paintable;
         for (const c of palette) {
           paintedByNum.set(c.num, 0);
-          // Re-show swatches (they may have been hidden when completed)
+          // Reset swatches (they may have been marked done on a prior puzzle)
           const sw = document.querySelector(`.swatch[data-num="${c.num}"]`);
-          if (sw) sw.style.display = '';
+          if (sw) sw.classList.remove('done');
           setSwatchCount(counterByNum, c.num, 0, totalByNum.get(c.num) || 0);
         }
 
@@ -820,25 +2646,34 @@
           const next = (paintedByNum.get(n) || 0) + 1;
           paintedByNum.set(n, next);
           setSwatchCount(counterByNum, n, next, totalByNum.get(n) || 0);
+          updateNumberVisibility(_path);
+          markPathPainted(puzzle.puzzleId, Number(_path.dataset.pnbIndex));
           if (totalToPaint > 0 && paintedCount >= totalToPaint) {
-            revealOriginalInWrap(svgWrap);
+            markPuzzleCompleted(puzzle.puzzleId);
+            revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
           }
         }
 
-        // Cheat: paint everything correctly at once (only unpainted regions count)
-        cheatFn = () => {
-          for (const p of paintable) {
-            // Skip the special facetId
-            const facetId = (
-              p.getAttribute('data-facetId') ||
-              p.getAttribute('data-facetid') ||
-              p.dataset.facetId ||
-              p.dataset.facetid ||
-              ''
-            ).toString();
-            if (facetId === '397') continue;
+        // Restore any previously painted regions for this puzzle (e.g. the
+        // user left for the menu, or is reopening a finished puzzle).
+        const savedProgress = getPuzzleProgress(puzzle.puzzleId);
+        for (const index of savedProgress.painted) {
+          const p = paintable[index];
+          if (!p || p.dataset.painted === '1') continue;
+          const fill = p.dataset.correctFill;
+          if (fill) p.style.fill = fill;
+          p.dataset.painted = '1';
+          onCorrectPaint(p);
+        }
 
-            if (p.dataset.painted === '1') continue;
+        // Cheat: paint every unpainted region except one, always leaving at
+        // least one region for the user to paint themselves — so cheating
+        // never finishes the puzzle outright, no matter how many times it's
+        // pressed.
+        cheatFn = () => {
+          const unpainted = paintable.filter((p) => p.dataset.painted !== '1');
+          unpainted.pop();
+          for (const p of unpainted) {
             const fill = p.dataset.correctFill;
             if (fill) p.style.fill = fill;
             p.dataset.painted = '1';
@@ -852,32 +2687,351 @@
           // Some browsers need a second frame if fonts/paths settle late.
           requestAnimationFrame(() => {
             fitSvgToWrap(annotated);
-            // Now wire pan/zoom on the fitted SVG
-            wirePanZoom(annotated, svgWrap);
+            // Now wire pan/zoom + tap-to-paint on the fitted SVG
+            panzoomCtl = wireCanvasInteractions(annotated, svgWrap, paletteSelection, onCorrectPaint);
+            checkFitsWithinWrap(annotated, svgWrap);
+            pnbMark('pnb:interactive');
+            reportPerf();
           });
         });
-        wirePainting(annotated, paletteSelection, onCorrectPaint);
+        window.addEventListener('resize', () => checkFitsWithinWrap(annotated, svgWrap));
       }
 
-      await loadAndShow(initial);
+      await loadAndShow(puzzle.svgUrl, puzzle.referenceImageUrl);
+    }
 
-      paintingSelect.addEventListener('change', async () => {
-        const stem = paintingSelect.value;
-        setUrlPainting(stem);
-        await loadAndShow(stem);
+    // Navigation is reload-based: main()'s setup (buildSwatches, wireZoomControls,
+    // etc.) assumes it runs exactly once per page life, so switching puzzles goes
+    // through a fresh `boot()` rather than trying to safely re-run that setup in-page.
+    function parsePuzzleHash(hash) {
+      const m = /^#puzzle=(.+)$/.exec(hash || '');
+      return m ? decodeURIComponent(m[1]) : null;
+    }
+
+    function goToPuzzle(idOrToday) {
+      location.hash = `puzzle=${encodeURIComponent(idOrToday)}`;
+      location.reload();
+    }
+
+    function backToMenu() {
+      location.hash = '';
+      location.reload();
+    }
+
+    function menuStatusLabel(progress) {
+      if (progress.completed) return t('menuStatusCompleted');
+      if (progress.painted.length > 0) return t('menuStatusInProgress');
+      return t('menuStatusNotStarted');
+    }
+
+    function setMenuThumb(thumbEl, referenceImageUrl, completed) {
+      if (completed) {
+        thumbEl.textContent = '';
+        thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
+        thumbEl.style.backgroundSize = 'cover';
+        thumbEl.style.backgroundPosition = 'center';
+      } else {
+        thumbEl.textContent = '🎨';
+        thumbEl.style.backgroundImage = 'none';
+      }
+    }
+
+    // Shared by the menu's horizontal strip and the archive grid — a button
+    // card for one past puzzle. Labeled by its release order ("#N"), not its
+    // date — see fetchNumberedPuzzleHistory.
+    function buildHistoryCard(row) {
+      const progress = getPuzzleProgress(row.puzzleId);
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'menuHistoryItem';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'menuThumb';
+      setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
+
+      const number = document.createElement('div');
+      number.className = 'menuHistoryNumber';
+      number.textContent = t('menuPuzzleNumber', { num: row.number });
+      const status = document.createElement('div');
+      status.className = 'menuStatus';
+      status.textContent = menuStatusLabel(progress);
+
+      item.appendChild(thumb);
+      item.appendChild(number);
+      item.appendChild(status);
+      item.addEventListener('click', () => goToPuzzle(row.puzzleId));
+      return item;
+    }
+
+    async function renderMenu() {
+      document.getElementById('menuOverlay').classList.add('show');
+
+      const todayStatusEl = document.getElementById('menuTodayStatus');
+      const historyStripEl0 = document.getElementById('menuHistoryStrip');
+      todayStatusEl.textContent = t('loading');
+      historyStripEl0.innerHTML = '';
+
+      const [todayResult, historyResult] = await Promise.allSettled([fetchActivePuzzle(), fetchRecentPuzzleHistory()]);
+
+      const todayCard = document.getElementById('menuTodayCard');
+      const todayThumb = document.getElementById('menuTodayThumb');
+      const todayStatus = document.getElementById('menuTodayStatus');
+      if (todayResult.status === 'fulfilled') {
+        const progress = getPuzzleProgress(todayResult.value.puzzleId);
+        todayStatus.textContent = menuStatusLabel(progress);
+        setMenuThumb(todayThumb, todayResult.value.referenceImageUrl, progress.completed);
+        todayCard.addEventListener('click', () => goToPuzzle('today'));
+      } else {
+        console.error(todayResult.reason);
+        todayStatus.textContent = t('errorNoActivePuzzle');
+        todayCard.disabled = true;
+      }
+
+      const historyStripEl = document.getElementById('menuHistoryStrip');
+      historyStripEl.innerHTML = '';
+      const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
+      if (historyResult.status === 'rejected') console.error(historyResult.reason);
+      if (!historyRows.length) {
+        const empty = document.createElement('div');
+        empty.className = 'menuHistoryEmpty';
+        empty.textContent = t('menuHistoryEmpty');
+        historyStripEl.appendChild(empty);
+      } else {
+        for (const row of historyRows) {
+          historyStripEl.appendChild(buildHistoryCard(row));
+        }
+      }
+
+      wireArchive();
+    }
+
+    // Archive state: fetched once, lazily, on first open — a flat, numbered
+    // list (no date-based grouping), so opening it again just re-renders the
+    // already-fetched array with no repeat network round trip.
+    let archiveRows = null;
+
+    function renderArchiveGrid() {
+      const grid = document.getElementById('archiveGrid');
+      grid.innerHTML = '';
+
+      if (!archiveRows.length) {
+        const empty = document.createElement('div');
+        empty.className = 'archiveEmpty';
+        empty.textContent = t('archiveEmpty');
+        grid.appendChild(empty);
+        return;
+      }
+
+      for (const row of archiveRows) {
+        grid.appendChild(buildHistoryCard(row));
+      }
+    }
+
+    async function openArchive() {
+      document.getElementById('archiveOverlay').classList.add('show');
+      if (!archiveRows) {
+        const grid = document.getElementById('archiveGrid');
+        grid.textContent = t('loading');
+        archiveRows = await fetchPuzzleArchive();
+      }
+      renderArchiveGrid();
+    }
+
+    function closeArchive() {
+      document.getElementById('archiveOverlay').classList.remove('show');
+    }
+
+    function wireArchive() {
+      const openBtn = document.getElementById('menuArchiveBtn');
+      openBtn.addEventListener('click', openArchive);
+      document.getElementById('archiveCloseBtn').addEventListener('click', closeArchive);
+    }
+
+    function wireHomeButton() {
+      const btn = document.getElementById('homeBtn');
+      btn.classList.add('show');
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.classList.add('hasBack');
+      btn.addEventListener('click', backToMenu);
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        backToMenu();
       });
     }
 
-    main().catch((err) => {
+    function wireNumbersToggle() {
+      const btn = document.getElementById('numbersToggleBtn');
+      btn.classList.add('show');
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.classList.add('hasNumbersToggle');
+
+      const applyState = () => {
+        btn.classList.toggle('active', hideNumbersEnabled);
+        btn.setAttribute('aria-pressed', String(hideNumbersEnabled));
+      };
+      applyState();
+
+      const activate = () => {
+        hideNumbersEnabled = !hideNumbersEnabled;
+        saveHideNumbersPref(hideNumbersEnabled);
+        applyState();
+        refreshAllNumberVisibility();
+      };
+      btn.addEventListener('click', activate);
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        activate();
+      });
+    }
+
+    // On native (iOS/Android), Capacitor shows a static launch splash from native
+    // code before any web content loads. `#splashOverlay` is plain HTML/CSS (no JS
+    // needed to paint it, and it keeps animating via CSS alone), so the instant the
+    // web view can render anything, it already matches — hide the native splash
+    // right away rather than waiting on the network, closing the gap that used to
+    // flash black/blank between native splash and app content.
+    function hideNativeSplash() {
+      const splashScreen = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen;
+      if (splashScreen) splashScreen.hide();
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    // Matches the .splashSwatch CSS: the last swatch starts its 2.4s color-cycle
+    // after a 0.6s stagger delay, so 3000ms is when every swatch has completed
+    // one full cycle. Keep this in sync if those CSS values change.
+    const SPLASH_ANIMATION_MS = 3000;
+
+    function hideWebSplash() {
+      const el = document.getElementById('splashOverlay');
+      if (!el) return;
+      el.classList.add('hide');
+      setTimeout(() => { el.style.display = 'none'; }, 300);
+    }
+
+    // Lightweight, opt-in perf instrumentation (see PERFORMANCE.md). Marks
+    // are cheap no-ops unless ?perf=1 is in the URL, so they're safe to leave
+    // in place permanently rather than stripping them for production.
+    function pnbMark(name) {
+      try { performance.mark(name); } catch (_e) { /* perf API unavailable */ }
+    }
+
+    function pnbPerfEnabled() {
+      try { return new URLSearchParams(location.search).get('perf') === '1'; }
+      catch (_e) { return false; }
+    }
+
+    function reportPerf() {
+      if (!pnbPerfEnabled()) return;
+      try {
+        const at = (name) => {
+          const entries = performance.getEntriesByName(name);
+          return entries.length ? entries[entries.length - 1].startTime : null;
+        };
+        const bootStart = at('pnb:boot-start');
+        const i18nDone = at('pnb:i18n-loaded');
+        const puzzleFetched = at('pnb:puzzle-fetched');
+        const svgLoaded = at('pnb:svg-loaded');
+        const svgAnnotated = at('pnb:svg-annotated');
+        const interactive = at('pnb:interactive');
+        if (bootStart == null || interactive == null) return;
+
+        const ms = (a, b) => (a != null && b != null) ? Math.round(b - a) : '';
+        const row = {
+          time_to_interactive_ms: Math.round(interactive - bootStart),
+          i18n_ms: ms(bootStart, i18nDone),
+          puzzle_fetch_ms: ms(i18nDone, puzzleFetched),
+          svg_load_ms: ms(puzzleFetched, svgLoaded),
+          svg_annotate_ms: ms(svgLoaded, svgAnnotated),
+        };
+
+        const date = new Date().toISOString().slice(0, 10);
+        const csvRow = `${date},DEVICE,BROWSER,NOTES,${row.time_to_interactive_ms},${row.i18n_ms},${row.puzzle_fetch_ms},${row.svg_load_ms},${row.svg_annotate_ms}`;
+        console.log('[pnb-perf] fill in DEVICE/BROWSER/NOTES and append to perf/BENCHMARKS.csv:');
+        console.log(csvRow);
+
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:99999;background:rgba(0,0,0,0.85);color:#fff;font:12px/1.5 monospace;padding:10px 12px;border-radius:8px;max-width:90vw;white-space:pre;';
+        el.textContent = `pnb-perf (ms)\ntime-to-interactive: ${row.time_to_interactive_ms}\ni18n load: ${row.i18n_ms}\npuzzle fetch: ${row.puzzle_fetch_ms}\nsvg load: ${row.svg_load_ms}\nsvg annotate: ${row.svg_annotate_ms}\n(full CSV row logged to console)`;
+        const closeBtn = document.createElement('div');
+        closeBtn.textContent = '× close';
+        closeBtn.style.cssText = 'margin-top:6px;text-align:right;opacity:0.7;cursor:pointer;';
+        closeBtn.addEventListener('click', () => el.remove());
+        el.appendChild(closeBtn);
+        document.body.appendChild(el);
+      } catch (_e) { /* perf reporting must never break the app */ }
+    }
+
+    async function boot() {
+      pnbMark('pnb:boot-start');
+      hideNativeSplash();
+      wireViewportSizeSync();
+
+      // The animated splash is a first-impression/branding moment, not a generic
+      // "please wait" spinner — it should only play once per app session (native
+      // cold start), not replay in full on every in-app menu<->puzzle navigation
+      // (which is reload-based, see goToPuzzle/backToMenu). sessionStorage survives
+      // those reloads (same WebView instance) but resets on a real app relaunch.
+      const isFirstBoot = !sessionStorage.getItem('pnb_booted');
+      try { sessionStorage.setItem('pnb_booted', '1'); } catch (_e) { /* ignore */ }
+      if (!isFirstBoot) {
+        const splashEl = document.getElementById('splashOverlay');
+        if (splashEl) splashEl.style.display = 'none';
+      }
+
+      const bootStarted = Date.now();
+      try {
+        I18N = await loadTranslations(LANG);
+        pnbMark('pnb:i18n-loaded');
+        document.documentElement.lang = LANG;
+        applyStaticTranslations();
+        wireTopbarHeightSync();
+
+        const requested = parsePuzzleHash(location.hash);
+        if (requested === null) {
+          await renderMenu();
+          return;
+        }
+        wireHomeButton();
+        wireNumbersToggle();
+        const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
+        pnbMark('pnb:puzzle-fetched');
+        fetchPuzzleNumber(puzzle.puzzleId).then(setPuzzleTitle).catch(() => {});
+        await main(puzzle);
+      } finally {
+        if (isFirstBoot) {
+          const remaining = SPLASH_ANIMATION_MS - (Date.now() - bootStarted);
+          if (remaining > 0) await sleep(remaining);
+          hideWebSplash();
+        }
+      }
+    }
+
+    wireDebugBanner();
+    wireProductionErrorOverlay();
+
+    boot().catch((err) => {
       console.error(err);
+      const isFile = window.location.protocol === 'file:';
+      if (IS_PRODUCTION) {
+        showProductionError(isFile ? 'FILE_PROTOCOL' : (err.code || 'BOOT_FAILED'));
+        return;
+      }
+      showDebugBanner(`boot() failed: ${err.message || err}\n\nSUPABASE_URL: ${SUPABASE_URL}`);
+      // #svgWrap only exists on the puzzle route (renderMenu's failures are
+      // handled inline instead) — guard rather than assume it's present.
       const svgWrap = document.getElementById('svgWrap');
+      if (!svgWrap) return;
       svgWrap.innerHTML = '';
       const msg = document.createElement('div');
       msg.className = 'loading';
-      const isFile = window.location.protocol === 'file:';
       msg.textContent = isFile
-        ? 'Error: browser blocked loading files. Open this via a web server (http/https), not file://. Example: run “python -m http.server 5173” in this folder, then open http://127.0.0.1:5173/index.html'
-        : `Error: ${err.message || err}`;
+        ? t('errorFileProtocol')
+        : t('errorGeneric', { message: err.message || err });
       svgWrap.appendChild(msg);
     });
   </script>
