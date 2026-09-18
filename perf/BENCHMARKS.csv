@@ -1,1 +1,2 @@
 date,device,browser_or_app,notes,time_to_interactive_ms,i18n_ms,puzzle_fetch_ms,svg_load_ms,svg_annotate_ms
+2026-09-18,iPad 10th gen (MPQ93J/A),in app,local Supabase,321,5,44,96,3

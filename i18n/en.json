@@ -1,7 +1,7 @@
 {
   "appTitle": "Paint by Numbers",
   "menuTitle": "Paint by Numbers",
-  "menuTodayTitle": "Today's puzzle",
+  "menuTodayTitle": "Active painting",
   "menuHistoryTitle": "Past paintings",
   "menuHistorySubtitle": "A new painting is added every week.",
   "menuHistoryEmpty": "No past puzzles yet — check back after this week.",
@@ -35,7 +35,7 @@
   "colorAriaLabel": "Color {{num}}",
   "cheatAriaLabel": "Cheat: fill all remaining regions but one",
   "cheatTop": "CHEAT",
-  "cheatBottom": "Almost all",
+  "cheatBottom": "Fill (almost) all",
   "finalImageAlt": "Completed painting",
   "triviaCloseLabel": "Close",
   "triviaUntitled": "Untitled",
