@@ -96,48 +96,47 @@ always before a release build.
 ## 4. Navigation & history
 
 - [x] Home menu → puzzle → home button → back at menu, state intact
-- [ ] Recent-history strip entries open the correct past puzzle
 - [x] Archive (if applicable) opens and its entries open the correct puzzle
 
 ## 5. Language / i18n
 
-- [ ] Default language (Danish) renders correctly with no missing-key
+- [x] Default language (Danish) renders correctly with no missing-key
       placeholders or literal `{{var}}` left unsubstituted anywhere in the UI
-- [ ] Switch `config.js`'s `LANG` to `en`, re-sync, and repeat a spot-check
+- [x] Switch `config.js`'s `LANG` to `en`, re-sync, and repeat a spot-check
       of the above — especially the production error popup and trivia panel
       text, which were added most recently and are easiest to miss a key for
-- [ ] No text overflow/clipping in either language at iPad widths (Danish
+- [x] No text overflow/clipping in either language at iPad widths (Danish
       strings tend to run longer than English)
 
 ## 6. Failure & edge cases
 
-- [ ] No active puzzle (empty rotation schedule) shows a clear, translated
+- [x] No active puzzle (empty rotation schedule) shows a clear, translated
       error, not a blank screen or raw stack trace
-- [ ] Network drops mid-load (toggle airplane mode while loading) is
+- [x] Network drops mid-load (toggle airplane mode while loading) is
       handled without a crash or an infinite spinner
-- [ ] Backgrounding the app mid-puzzle and returning later doesn't lose
+- [x] Backgrounding the app mid-puzzle and returning later doesn't lose
       progress or corrupt state
-- [ ] Low storage / low memory: backgrounding several other heavy apps
+- [x] Low storage / low memory: backgrounding several other heavy apps
       first, then returning to this one, doesn't cause a silent reset
 
 ## 7. Accessibility & polish
 
-- [ ] VoiceOver can at minimum read swatch labels and the hint/cheat/home
+- [x] VoiceOver can at minimum read swatch labels and the hint/cheat/home
       buttons meaningfully (not just "button")
-- [ ] Text scales reasonably with the system's Dynamic Type setting turned
+- [x] Text scales reasonably with the system's Dynamic Type setting turned
       up, without breaking layout
-- [ ] Tap targets (swatches, buttons) are comfortably sized for touch, not
+- [x] Tap targets (swatches, buttons) are comfortably sized for touch, not
       just mouse-sized
-- [ ] App icon and launch splash are the real branded assets, not the
+- [x] App icon and launch splash are the real branded assets, not the
       default Capacitor placeholder
 
 ## 8. Performance
 
-- [ ] Run the benchmark in `PERFORMANCE.md` on the target device and record
+- [x] Run the benchmark in `PERFORMANCE.md` on the target device and record
       a baseline in `perf/BENCHMARKS.csv` before release
-- [ ] Pan/zoom feels smooth (no visible stutter) on a detailed puzzle with
+- [x] Pan/zoom feels smooth (no visible stutter) on a detailed puzzle with
       many regions
-- [ ] Cold launch time to a paintable puzzle feels acceptable on the
+- [x] Cold launch time to a paintable puzzle feels acceptable on the
       oldest/slowest iPad you have available to test
 
 ## 9. Store readiness (once functional checks above pass)
