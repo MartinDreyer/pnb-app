@@ -76,3 +76,11 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Integrate `@capacitor-community/admob`: native banner ad + layout reserved for it (`--banner-h`), rewarded ad to grant extra hints once the free limit is used up
 - [x] Drop the free hint limit from 5 to 3, now that rewarded-ad top-ups exist; add a "watch an ad" affordance in place of just disabling the hint button
 - [x] Avoid burning a hint/ad view when re-tapping the hint button on a still-unpainted region it already pointed to
+- [x] Restyle the home/archive, active-puzzle and completion-reveal screens as a "museum" theme (gallery wall of framed puzzles, easel-backed canvas, framed reveal + placard), from user-supplied mockups and asset pack
+- [x] Add a reusable `.museumFrame` CSS utility (4 gold palette variants, painted via `conic-gradient` after a `border-image` photo-tile attempt didn't read as an actual frame) and wire `build:www` to also copy the new `museum/` asset folder
+- [x] Rework the completion reveal to hang the framed painting on the wall with its plaque below (matching the mockup), instead of leaving it sitting on the easel/canvas
+- [x] Fix `.menuArchiveBtn`/`.archiveCloseBtn` rendering near-invisible (near-black text, too-transparent background) against the dark green wall
+- [x] Stop reopening an already-completed puzzle from showing a full-screen interstitial ad; go straight to the reveal
+- [x] Stop the banner ad from appearing before the first-boot splash animation finishes
+- [x] Restyle the hint button as a lightbulb icon + count badge + label, per the mockup, instead of a text pill
+- [x] Rename the app to "Mindfill" (title, native app names, wordmark with a painted "fill")

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <!-- Disable page zoom; we implement pinch-zoom inside the canvas -->
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Mal efter tal</title>
+  <title>Mindfill</title>
   <style>
     :root {
       --target-w: 1620;
@@ -116,8 +116,12 @@
       white-space: normal;
     }
 
+    /* The puzzle "sits" on a photographed studio easel: the photo shows
+       through in the topbar/palette-reserved bands and .svgWrap's 20px
+       padding around the canvas (see below), the same way it does behind a
+       real easel's crossbar/tray. */
     .canvas {
-      background: var(--canvas-bg);
+      background: var(--canvas-bg) url("museum/easel-bg.jpg") center/cover no-repeat;
       position: absolute;
       inset: 0;
       z-index: 0;
@@ -130,12 +134,10 @@
       place-items: center;
     }
 
-    /* Same soft colorful blobs as the menu (see .menuOverlay::before), toned
-       down further since this sits behind the actual artwork: low enough
-       opacity that it livens up the matte --canvas-bg without competing
-       with the painting's contrast. Painted behind .svgWrap via negative
-       z-index (requires .canvas's z-index:0 above to form a stacking
-       context to paint into). */
+    /* Gentle dark vignette so the studio photo doesn't compete with the
+       artwork's own contrast — same technique as .menuOverlay::before.
+       Painted behind .svgWrap via negative z-index (requires .canvas's
+       z-index:0 above to form a stacking context to paint into). */
     .canvas::before {
       content: "";
       position: absolute;
@@ -143,10 +145,24 @@
       z-index: -1;
       pointer-events: none;
       background:
-        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.28), rgba(110,168,255,0) 70%),
-        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.25), rgba(240,180,41,0) 70%),
-        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.25), rgba(95,180,136,0) 70%),
-        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.25), rgba(217,142,95,0) 70%);
+        radial-gradient(140% 90% at 50% 50%, rgba(0,0,0,0) 45%, rgba(0,0,0,0.35) 100%);
+    }
+
+    /* Once the puzzle is finished (see revealOriginalInWrap), the working
+       canvas becomes a museum wall instead of the easel — same wallpaper
+       texture/vignette technique as .menuOverlay. overflow-y switches to
+       auto (from .canvas's usual hidden, needed while pan/zoom is active)
+       since the framed picture + plaque can be taller than the screen. */
+    .canvas.revealed {
+      background: #16231a url("museum/wallpaper.jpg") center/512px auto repeat;
+      overflow-y: auto;
+    }
+
+    .canvas.revealed::before {
+      background:
+        radial-gradient(120% 70% at 50% -10%, rgba(255,255,255,0.10), rgba(255,255,255,0) 60%),
+        radial-gradient(140% 90% at 50% 110%, rgba(0,0,0,0.55), rgba(0,0,0,0) 55%),
+        linear-gradient(rgba(0,0,0,0.28), rgba(0,0,0,0.28));
     }
 
     .svgWrap {
@@ -165,6 +181,20 @@
       box-sizing: border-box;
     }
 
+    /* Revealed state: a vertical stack (framed painting, then plaque) that
+       can grow taller than the screen and scroll (see .canvas.revealed),
+       instead of a single grid item forced to fill exactly one viewport. */
+    .svgWrap.revealed {
+      height: auto;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 26px;
+      padding: 30px 20px;
+    }
+
     /* Injected SVG */
     #pnb-svg {
       width: 100%;
@@ -180,17 +210,18 @@
       transform-origin: 0 0;
     }
 
-    /* Final revealed PNG */
+    /* Final revealed PNG — framed like a museum piece (see .museumFrame)
+       and sized to its own aspect ratio (not stretched to fill the wrap)
+       so it reads as a picture hanging on the wall, not a canvas filling
+       the screen. Thicker border than the small gallery-wall thumbnails
+       since it's the screen's one hero image. */
     .finalImage {
-      width: 100%;
-      height: 100%;
-      min-width: 0;
-      min-height: 0;
-      object-fit: contain;
+      max-width: 100%;
+      max-height: 55vh;
+      width: auto;
+      height: auto;
       background: white;
-      border-radius: 14px;
-      border: 1px solid var(--stroke);
-      box-shadow: 0 12px 40px rgba(0,0,0,0.22);
+      border-width: 34px;
       display: block;
       opacity: 0;
       transition: opacity 2250ms ease;
@@ -241,9 +272,17 @@
       paint-order: stroke;
     }
 
+    /* Bottom palette bar styled as the wooden mixing-tray/shelf under the
+       easel (see .canvas above), rather than a plain white toolbar.
+       --text/--muted overridden here (inherited by paletteHeader/selected/
+       hintBtn) for contrast against the warm brown gradient — the swatches
+       themselves keep their own fixed white background/dark text
+       regardless (see .swatch below), so they stay legible either way. */
     .palette {
-      border-top: 1px solid var(--stroke);
-      background: #FFFFFF;
+      --text: #fdf3e2;
+      --muted: #f0dcb4;
+      border-top: 3px solid #7a5220;
+      background: linear-gradient(180deg, #b9812f, #8f5f22);
       padding: 10px 10px calc(16px + env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
       display: grid;
@@ -255,6 +294,7 @@
       bottom: var(--banner-h, 0px);
       height: var(--palette-h);
       z-index: 60;
+      box-shadow: 0 -6px 18px rgba(0,0,0,0.3);
     }
 
     .paletteHeader {
@@ -337,13 +377,13 @@
     .edgeFade.left {
       left: 0;
       justify-content: flex-start;
-      background: linear-gradient(to right, #FFFFFF 45%, rgba(255,255,255,0));
+      background: linear-gradient(to right, #a9762e 45%, rgba(169,118,46,0));
     }
 
     .edgeFade.right {
       right: 0;
       justify-content: flex-end;
-      background: linear-gradient(to left, #FFFFFF 45%, rgba(255,255,255,0));
+      background: linear-gradient(to left, #a9762e 45%, rgba(169,118,46,0));
     }
 
     .swatch {
@@ -740,13 +780,43 @@
       color: var(--text);
     }
 
-    /* Menu screen: today's puzzle + history of past weeks. Sits above every
-       other overlay (.fitWarning is the highest existing z-index at 70). */
+    /* Brand wordmark: "Mind" plain, "fill" painted in the same 4 colors as
+       the swatch mark above it (splashSwatch/menuBrandSwatch) — like it was
+       just filled in with a brush, tying the logo to the actual mechanic.
+       Shared by .splashTitle and .menuTitle (see their markup). */
+    .brandFill {
+      background: linear-gradient(90deg, #6ea8ff, #d98e5f, #8a6a4f, #3a3a3a);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    /* Menu screen: today's puzzle + history of past weeks, styled as a
+       museum gallery wall (see .museumFrame below) — a green wallpaper
+       texture behind gold-framed puzzle thumbnails. Sits above every other
+       overlay (.fitWarning is the highest existing z-index at 70).
+       Overrides --text/--muted here (CSS custom properties inherit down
+       through every descendant that already reads them) so the whole
+       screen re-themes for the dark wall without touching each rule. */
+    .menuOverlay,
+    .archiveOverlay {
+      --text: #f3ead4;
+      --muted: #cdb98a;
+      --panel2: rgba(255,255,255,0.16);
+      --stroke: rgba(243,234,212,0.4);
+      /* color:inherit further down (menuArchiveBtn, archiveCloseBtn) only
+         inherits whatever color was already RESOLVED higher up the tree —
+         redefining the --text custom property here doesn't retroactively
+         change that. Setting color explicitly at this scope is what makes
+         the override actually reach inherit'd descendants. */
+      color: var(--text);
+    }
+
     .menuOverlay {
       position: fixed;
       inset: 0;
       z-index: 200;
-      background: var(--bg);
+      background: #16231a url("museum/wallpaper.jpg") center/512px auto repeat;
       box-sizing: border-box;
       padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
       overflow-y: auto;
@@ -757,11 +827,11 @@
       display: block;
     }
 
-    /* Soft colorful blobs behind the menu/archive content, instead of flat
-       white — purely decorative (low opacity, non-interactive), so it never
-       competes with the cards on top of it for readability. Scoped to these
-       two overlays only; the painting canvas keeps its matte --canvas-bg for
-       contrast against the artwork.
+    /* Soft dark vignette over the wallpaper texture, instead of flat color —
+       purely decorative (non-interactive), gives the wall a lit-museum
+       depth without competing with the frames on top of it for readability.
+       Scoped to these two overlays only; the painting canvas keeps its
+       matte --canvas-bg for contrast against the artwork.
        Deliberately no `filter: blur()` here — a full-viewport blur is a real
        rasterization cost (worse on low-power/mobile GPUs), and this is a
        reload-based app so every menu<->puzzle navigation repaints it from
@@ -776,10 +846,9 @@
       z-index: -1;
       pointer-events: none;
       background:
-        radial-gradient(600px circle at 8% 4%, rgba(110,168,255,0.55), rgba(110,168,255,0) 70%),
-        radial-gradient(560px circle at 96% 12%, rgba(240,180,41,0.5), rgba(240,180,41,0) 70%),
-        radial-gradient(580px circle at 88% 82%, rgba(95,180,136,0.5), rgba(95,180,136,0) 70%),
-        radial-gradient(520px circle at 4% 88%, rgba(217,142,95,0.5), rgba(217,142,95,0) 70%);
+        radial-gradient(120% 70% at 50% -10%, rgba(255,255,255,0.10), rgba(255,255,255,0) 60%),
+        radial-gradient(140% 90% at 50% 110%, rgba(0,0,0,0.55), rgba(0,0,0,0) 55%),
+        linear-gradient(rgba(0,0,0,0.28), rgba(0,0,0,0.28));
     }
 
     .menuHeader {
@@ -811,22 +880,98 @@
     .menuBrandSwatch:nth-child(4) { bottom: 0; right: 0; background: #3a3a3a; transform: rotate(-10deg); }
 
     .menuTitle {
-      font-size: 20px;
+      font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+      font-size: 22px;
       font-weight: 700;
+      letter-spacing: 0.3px;
+      color: #e8c877;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
       margin: 0;
+    }
+
+    /* Museum gallery-wall frame utility, shared by the home menu, archive
+       and completion-reveal screens. The corner/edge photo assets
+       (museum/frameN.jpg, a corner+edge tile pair per style) turned out not
+       to read as an actual frame once rendered — border-image DOES slice
+       them into distinct corner/edge regions correctly, but the source
+       photos' corner and edge textures look too similar to each other at
+       any size for that distinction to be visually obvious. A CSS-painted
+       bevel reads unambiguously as a frame instead: border-image-source is
+       a conic-gradient sweeping through shadow → base → highlight → hot-
+       highlight tones once per side, which (since conic-gradient's angle
+       wraps continuously around the box) naturally lands a believably lit,
+       mitred-looking corner exactly where two sides meet — no separate
+       corner asset needed. A thin dark trim ring on each side of the bevel
+       (via box-shadow, not border-image, so it doesn't consume another
+       border-image slice) completes the "moulding" look. Each numbered
+       variant is just a different gold palette for wall variety. */
+    .museumFrame {
+      box-sizing: border-box;
+      border-style: solid;
+      border-width: 22px;
+      border-image-slice: 1;
+      border-image-source: conic-gradient(from 315deg at 50% 50%,
+        var(--frame-hi, #fff6da) 0deg,
+        var(--frame-base, #d9a53c) 45deg,
+        var(--frame-mid, #a9741f) 90deg,
+        var(--frame-shadow, #6b4515) 135deg,
+        var(--frame-mid, #a9741f) 180deg,
+        var(--frame-base, #d9a53c) 225deg,
+        var(--frame-hi, #fff6da) 270deg,
+        var(--frame-hot, #fffaf0) 315deg,
+        var(--frame-hi, #fff6da) 360deg);
+      box-shadow:
+        0 0 0 2px var(--frame-trim, #4a2f0d),
+        inset 0 0 0 2px var(--frame-trim, #4a2f0d),
+        0 12px 26px rgba(0,0,0,0.45);
+    }
+
+    .museumFrame1 {
+      --frame-shadow: #6b4515; --frame-mid: #a9741f; --frame-base: #d9a53c;
+      --frame-hi: #f6d98a; --frame-hot: #fff6da; --frame-trim: #4a2f0d;
+    }
+    .museumFrame2 {
+      --frame-shadow: #4a2e10; --frame-mid: #8a5a1c; --frame-base: #c4922f;
+      --frame-hi: #e9c876; --frame-hot: #fbe9b8; --frame-trim: #2f1c08;
+    }
+    .museumFrame3 {
+      --frame-shadow: #3c2c1a; --frame-mid: #6e5230; --frame-base: #a4834a;
+      --frame-hi: #c9ac74; --frame-hot: #e6d3a0; --frame-trim: #22160a;
+    }
+    .museumFrame4 {
+      --frame-shadow: #7a4f1a; --frame-mid: #b17e2a; --frame-base: #e0ad4a;
+      --frame-hi: #ffe19a; --frame-hot: #fff4d8; --frame-trim: #5c3a12;
+    }
+
+    /* Small brass plaque caption under a framed thumbnail, like a museum
+       placard — shared by the "today" hero card and every history/archive
+       item (built in buildHistoryCard). */
+    .menuTodayBody,
+    .menuPlaque {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1px;
+      background: linear-gradient(#e9cb80, #b98b3e);
+      color: #3a2408;
+      border-radius: 5px;
+      padding: 5px 14px;
+      box-shadow: 0 3px 7px rgba(0,0,0,0.35);
     }
 
     .menuTodayCard {
       width: 100%;
+      max-width: 320px;
+      margin: 0 auto 30px;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 14px;
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      border-radius: 16px;
-      padding: 16px;
+      gap: 12px;
+      background: none;
+      border: none;
+      padding: 0;
       box-sizing: border-box;
-      text-align: left;
+      text-align: center;
       cursor: pointer;
       touch-action: manipulation;
       font: inherit;
@@ -838,32 +983,39 @@
     }
 
     .menuThumb {
-      width: 56px;
-      height: 56px;
-      border-radius: 10px;
+      width: 210px;
+      height: 210px;
       object-fit: cover;
       flex: none;
-      background: var(--stroke);
+      background: #f6f1e2;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 26px;
+      font-size: 30px;
+      color: #b8ac8f;
     }
 
-    .menuTodayBody {
-      flex: 1;
-      min-width: 0;
+    /* Unpainted-puzzle placeholder: a plain primed canvas rather than the
+       photographic reference image (see setMenuThumb). */
+    .menuThumbBlank {
+      background: #f6f1e2 !important;
+      opacity: 0.6;
+    }
+
+    #menuTodayThumb {
+      border-width: 30px;
     }
 
     .menuTodayHeading {
-      font-weight: 650;
-      font-size: 15px;
-      margin-bottom: 2px;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
     }
 
     .menuStatus {
-      font-size: 12px;
-      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
     }
 
     .menuHistoryTitle {
@@ -882,11 +1034,11 @@
 
     .menuHistoryStrip {
       display: flex;
-      gap: 10px;
+      gap: 22px;
       overflow-x: auto;
       overflow-y: hidden;
       scroll-snap-type: x proximity;
-      padding: 2px 2px 10px;
+      padding: 6px 2px 14px;
       margin: 0 -2px;
       -webkit-overflow-scrolling: touch;
     }
@@ -894,11 +1046,15 @@
     /* On a screen wide enough to fit several cards per row (iPad and up), a
        single horizontally-scrolling band wastes most of the screen's width
        and height. Switch to a wrapping grid of several bands instead — same
-       cards, same click targets, just laid out to use the extra room. */
+       cards, same click targets, just laid out to use the extra room. Extra
+       row-gap (vs. column-gap) gives the per-item translateY stagger below
+       room to breathe without neighbouring rows overlapping. */
     @media (min-width: 700px) {
       .menuHistoryStrip {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        row-gap: 34px;
+        column-gap: 18px;
         overflow-x: visible;
         overflow-y: visible;
       }
@@ -906,22 +1062,36 @@
       .menuHistoryStrip .menuHistoryItem {
         width: 100%;
       }
+
+      /* Loose "salon hang" variety: alternating tilt/rise per item instead
+         of a rigid grid of identical frames. Only on screens wide enough to
+         show the grid (see above) — in the single-row scrolling strip on
+         phones, .menuHistoryStrip keeps overflow-y: hidden, so an offset
+         there would just get clipped. */
+      .menuHistoryItem:nth-child(6n+1) { transform: rotate(-2deg) translateY(2px); }
+      .menuHistoryItem:nth-child(6n+2) { transform: rotate(1.5deg) translateY(14px); }
+      .menuHistoryItem:nth-child(6n+3) { transform: rotate(-1deg) translateY(-8px); }
+      .menuHistoryItem:nth-child(6n+4) { transform: rotate(2deg) translateY(6px); }
+      .menuHistoryItem:nth-child(6n+5) { transform: rotate(-1.5deg) translateY(-4px); }
+      .menuHistoryItem:nth-child(6n+6) { transform: rotate(1deg) translateY(10px); }
+
+      /* Every third frame a touch taller, for size variety along the wall. */
+      .menuHistoryItem:nth-child(3n) .menuThumb { aspect-ratio: 4 / 5; height: auto; }
     }
 
     .menuHistoryItem {
       flex: none;
-      width: 120px;
+      width: 130px;
       scroll-snap-align: start;
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
-      border-radius: 14px;
-      padding: 10px;
+      align-items: center;
+      gap: 10px;
+      background: none;
+      border: none;
+      padding: 0;
       box-sizing: border-box;
-      text-align: left;
+      text-align: center;
       cursor: pointer;
       touch-action: manipulation;
       font: inherit;
@@ -934,18 +1104,24 @@
 
     .menuHistoryItem .menuThumb {
       width: 100%;
-      height: 84px;
-      border-radius: 10px;
-      font-size: 22px;
+      height: 90px;
+      font-size: 20px;
+      color: #b8ac8f;
     }
 
+    /* Cycle the 4 frame styles across the wall by position. */
+    .menuHistoryItem:nth-child(4n+1) .menuThumb { --frame-shadow: #6b4515; --frame-mid: #a9741f; --frame-base: #d9a53c; --frame-hi: #f6d98a; --frame-hot: #fff6da; --frame-trim: #4a2f0d; }
+    .menuHistoryItem:nth-child(4n+2) .menuThumb { --frame-shadow: #4a2e10; --frame-mid: #8a5a1c; --frame-base: #c4922f; --frame-hi: #e9c876; --frame-hot: #fbe9b8; --frame-trim: #2f1c08; }
+    .menuHistoryItem:nth-child(4n+3) .menuThumb { --frame-shadow: #3c2c1a; --frame-mid: #6e5230; --frame-base: #a4834a; --frame-hi: #c9ac74; --frame-hot: #e6d3a0; --frame-trim: #22160a; }
+    .menuHistoryItem:nth-child(4n+4) .menuThumb { --frame-shadow: #7a4f1a; --frame-mid: #b17e2a; --frame-base: #e0ad4a; --frame-hi: #ffe19a; --frame-hot: #fff4d8; --frame-trim: #5c3a12; }
+
     .menuHistoryNumber {
-      font-size: 12px;
-      font-weight: 650;
+      font-size: 11px;
+      font-weight: 700;
     }
 
     .menuHistoryItem .menuStatus {
-      font-size: 11px;
+      font-size: 10px;
     }
 
     .menuHistoryEmpty {
@@ -963,7 +1139,7 @@
       font: inherit;
       font-weight: 650;
       font-size: 13px;
-      color: inherit;
+      color: var(--text);
       cursor: pointer;
       touch-action: manipulation;
     }
@@ -979,7 +1155,7 @@
       position: fixed;
       inset: 0;
       z-index: 210;
-      background: var(--bg);
+      background: #16231a url("museum/wallpaper.jpg") center/512px auto repeat;
       box-sizing: border-box;
       padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
       overflow-y: auto;
@@ -1016,7 +1192,7 @@
       border-radius: 50%;
       background: var(--panel2);
       border: 1px solid var(--stroke);
-      color: inherit;
+      color: var(--text);
       font-size: 15px;
       cursor: pointer;
       touch-action: manipulation;
@@ -1025,8 +1201,9 @@
     .archiveGrid {
       margin-top: 18px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      row-gap: 34px;
+      column-gap: 18px;
     }
 
     .archiveGrid .menuHistoryItem {
@@ -1040,18 +1217,57 @@
       padding: 24px 0;
     }
 
-    /* Hint button */
+    /* Hint button — a glowing lightbulb + label, like a museum guide's
+       pointer, rather than a text pill. */
     .hintBtn {
-      font-size: 13px;
-      font-weight: 650;
-      color: var(--text);
-      background: #FFFFFF;
-      border: 1px solid var(--stroke);
-      border-radius: 999px;
-      padding: 6px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1px;
+      background: none;
+      border: none;
+      padding: 2px 8px;
       user-select: none;
       touch-action: manipulation;
       cursor: pointer;
+    }
+
+    .hintBtnIconWrap {
+      position: relative;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      line-height: 1;
+      filter: drop-shadow(0 0 5px rgba(255, 224, 130, 0.8));
+    }
+
+    .hintBtnBadge {
+      position: absolute;
+      top: -3px;
+      right: -7px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 3px;
+      box-sizing: border-box;
+      border-radius: 999px;
+      background: #d64545;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+
+    .hintBtnLabel {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
     }
 
     .hintBtn:active {
@@ -1059,15 +1275,19 @@
     }
 
     .hintBtn[disabled] {
-      opacity: 0.4;
+      opacity: 0.5;
       cursor: not-allowed;
     }
 
-    /* Free hints exhausted: instead of looking disabled, invite a rewarded ad. */
-    .hintBtn.hintBtnWatchAd {
-      background: var(--accent);
-      color: #FFFFFF;
-      border-color: var(--accent);
+    /* Free hints exhausted: instead of looking disabled, invite a rewarded
+       ad — the badge (a hint count) no longer applies, so it's hidden. */
+    .hintBtn.hintBtnWatchAd .hintBtnBadge {
+      display: none;
+    }
+
+    .hintBtn.hintBtnWatchAd .hintBtnIconWrap {
+      filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.6));
+      opacity: 0.75;
     }
 
     /* ...except while an ad is actually loading (briefly disabled to block double-taps). */
@@ -1075,49 +1295,42 @@
       opacity: 0.7;
     }
 
-    /* Completion trivia panel */
+    /* Completion trivia panel — a museum wall placard (parchment tone + a
+       gold top edge) sitting in normal flow below the framed painting (see
+       .svgWrap.revealed), not a fixed bottom sheet covering it. */
     .triviaPanel {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: var(--banner-h, 0px);
-      background: #FFFFFF;
-      border-top: 1px solid var(--stroke);
-      box-shadow: 0 -8px 28px rgba(0,0,0,0.18);
-      padding: 14px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+      --muted: #7a6a4a;
+      width: 100%;
+      max-width: 420px;
+      background: #f6efdd;
+      border-top: 4px solid #c79a44;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
+      padding: 14px 18px;
       box-sizing: border-box;
-      max-height: 42vh;
-      overflow-y: auto;
-      z-index: 60;
-      transform: translateY(100%);
-      transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      border-radius: 0 0 4px 4px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 420ms ease, transform 420ms ease;
     }
 
     .triviaPanel.show {
+      opacity: 1;
       transform: translateY(0);
     }
 
-    .triviaClose {
-      position: absolute;
-      top: 8px;
-      right: 10px;
-      font-size: 18px;
-      line-height: 1;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 4px 8px;
-      user-select: none;
-    }
-
     .triviaTitle {
+      font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
       font-weight: 750;
-      font-size: 15px;
-      margin: 0 28px 2px 0;
+      font-size: 16px;
+      letter-spacing: 0.2px;
+      text-align: center;
+      margin: 0 0 2px;
     }
 
     .triviaArtist {
       font-size: 13px;
       color: var(--muted);
+      text-align: center;
       margin-bottom: 10px;
     }
 
@@ -1153,8 +1366,8 @@
       font-size: 13px;
       line-height: 1.45;
       color: var(--text);
-      background: var(--panel2);
-      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(199,154,68,0.4);
       border-radius: 12px;
       padding: 10px 12px;
       margin: 0 0 12px;
@@ -1191,7 +1404,7 @@
         <div class="splashSwatch"></div>
         <div class="splashSwatch"></div>
       </div>
-      <div class="splashTitle" data-i18n="appTitle"></div>
+      <div class="splashTitle">Mind<span class="brandFill">fill</span></div>
     </div>
 
     <div class="menuOverlay" id="menuOverlay">
@@ -1202,10 +1415,10 @@
           <div class="menuBrandSwatch"></div>
           <div class="menuBrandSwatch"></div>
         </div>
-        <h1 class="menuTitle" data-i18n="menuTitle"></h1>
+        <h1 class="menuTitle">Mind<span class="brandFill">fill</span></h1>
       </div>
       <button type="button" class="menuTodayCard" id="menuTodayCard">
-        <div class="menuThumb" id="menuTodayThumb">🎨</div>
+        <div class="menuThumb museumFrame1" id="menuTodayThumb">🎨</div>
         <div class="menuTodayBody">
           <div class="menuTodayHeading" data-i18n="menuTodayTitle"></div>
           <div class="menuStatus" id="menuTodayStatus"></div>
@@ -1266,7 +1479,13 @@
           <div class="selectedChip" id="selectedChip"></div>
           <div class="selected" id="selectedLabel" data-i18n="selectedNone"></div>
         </div>
-        <div class="hintBtn" id="hintBtn" role="button" tabindex="0" data-i18n-aria="hintButtonLabel"></div>
+        <div class="hintBtn" id="hintBtn" role="button" tabindex="0" data-i18n-aria="hintButtonLabel">
+          <div class="hintBtnIconWrap">
+            <div class="hintBtnIcon" aria-hidden="true">💡</div>
+            <div class="hintBtnBadge" id="hintBtnBadge"></div>
+          </div>
+          <div class="hintBtnLabel" id="hintBtnLabel"></div>
+        </div>
       </div>
       <div class="swatchesWrap">
         <div class="swatches" id="swatches"></div>
@@ -2350,13 +2569,6 @@
       panel.className = 'triviaPanel';
       panel.id = 'triviaPanel';
 
-      const close = document.createElement('div');
-      close.className = 'triviaClose';
-      close.textContent = '×';
-      close.setAttribute('role', 'button');
-      close.setAttribute('aria-label', t('triviaCloseLabel'));
-      close.addEventListener('click', () => panel.classList.remove('show'));
-
       const title = document.createElement('div');
       title.className = 'triviaTitle';
       title.textContent = puzzle.title || t('triviaUntitled');
@@ -2369,7 +2581,6 @@
       loading.className = 'triviaLoading';
       loading.textContent = t('triviaLoading');
 
-      panel.appendChild(close);
       panel.appendChild(title);
       panel.appendChild(artist);
 
@@ -2448,9 +2659,21 @@
       });
     }
 
+    // The finished puzzle moves off the easel and onto the museum wall: the
+    // working canvas (.canvas/.svgWrap) swaps from the easel photo to the
+    // same wallpaper background as the home menu (see .canvas.revealed/
+    // .svgWrap.revealed), with the painting framed and hung above its
+    // plaque instead of still sitting in the pan/zoom canvas.
     function revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle) {
+      const canvasEl = document.querySelector('.canvas');
+      if (canvasEl) canvasEl.classList.add('revealed');
+      svgWrap.classList.add('revealed');
+
+      const topbarEl = document.querySelector('.topbar');
+      if (topbarEl) topbarEl.style.display = 'none';
+
       const img = document.createElement('img');
-      img.className = 'finalImage';
+      img.className = 'finalImage museumFrame museumFrame1';
       img.alt = t('finalImageAlt');
       img.src = referenceImageUrl;
 
@@ -2461,7 +2684,6 @@
         // Ensure we have at least one frame with opacity:0 before showing
         requestAnimationFrame(() => {
           img.classList.add('show');
-          checkFitsWithinWrap(img, svgWrap);
         });
       };
       if (img.complete) show();
@@ -2559,12 +2781,15 @@
       function updateHintBtnLabel() {
         if (!hintBtn) return;
         hintBtn.removeAttribute('disabled');
+        const badgeEl = document.getElementById('hintBtnBadge');
+        const labelEl = document.getElementById('hintBtnLabel');
         if (hintsRemaining > 0) {
-          hintBtn.textContent = t('hintButtonCount', { count: hintsRemaining });
+          labelEl.textContent = t('hintButtonStatic');
+          badgeEl.textContent = String(hintsRemaining);
           hintBtn.classList.remove('hintBtnWatchAd');
         } else {
           // Instead of just disabling, offer a rewarded ad for more hints (see useHint).
-          hintBtn.textContent = t('hintButtonWatchAd');
+          labelEl.textContent = t('hintButtonWatchAd');
           hintBtn.classList.add('hintBtnWatchAd');
         }
       }
@@ -2681,6 +2906,14 @@
           setSwatchCount(counterByNum, c.num, 0, totalByNum.get(c.num) || 0);
         }
 
+        // Set before the restore loop below runs (it replays every already-
+        // painted region, including the final one on an already-finished
+        // puzzle, through this same onCorrectPaint completion branch). Only
+        // a completion that happens live, during this session, should show
+        // an interstitial — reopening an already-finished puzzle from the
+        // menu/history should go straight to the reveal with no ad.
+        let wasAlreadyCompleted = false;
+
         function onCorrectPaint(_path) {
           paintedCount += 1;
           const n = Number(_path.dataset.colorNum);
@@ -2691,6 +2924,10 @@
           markPathPainted(puzzle.puzzleId, Number(_path.dataset.pnbIndex));
           if (totalToPaint > 0 && paintedCount >= totalToPaint) {
             markPuzzleCompleted(puzzle.puzzleId);
+            if (wasAlreadyCompleted) {
+              revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
+              return;
+            }
             // Let the completion feel (final swatch fill animation) land before
             // any ad interrupts it; PnbAdMob no-ops/calls back instantly in
             // plain-browser dev or if no ad is available.
@@ -2705,6 +2942,7 @@
         // Restore any previously painted regions for this puzzle (e.g. the
         // user left for the menu, or is reopening a finished puzzle).
         const savedProgress = getPuzzleProgress(puzzle.puzzleId);
+        wasAlreadyCompleted = savedProgress.completed;
         for (const index of savedProgress.painted) {
           const p = paintable[index];
           if (!p || p.dataset.painted === '1') continue;
@@ -2772,14 +3010,21 @@
       return t('menuStatusNotStarted');
     }
 
+    // Unpainted puzzles show a plain primed-canvas placeholder rather than a
+    // rendered preview of the actual SVG artwork — fetching/rasterizing
+    // every history item's puzzle SVG just for a home-screen thumbnail
+    // isn't worth the extra load work, and it keeps the reveal a surprise.
     function setMenuThumb(thumbEl, referenceImageUrl, completed) {
+      thumbEl.classList.add('museumFrame');
       if (completed) {
         thumbEl.textContent = '';
+        thumbEl.classList.remove('menuThumbBlank');
         thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
         thumbEl.style.backgroundSize = 'cover';
         thumbEl.style.backgroundPosition = 'center';
       } else {
-        thumbEl.textContent = '🎨';
+        thumbEl.textContent = '✏️';
+        thumbEl.classList.add('menuThumbBlank');
         thumbEl.style.backgroundImage = 'none';
       }
     }
@@ -2797,23 +3042,26 @@
       thumb.className = 'menuThumb';
       setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
 
+      const plaque = document.createElement('div');
+      plaque.className = 'menuPlaque';
       const number = document.createElement('div');
       number.className = 'menuHistoryNumber';
       number.textContent = t('menuPuzzleNumber', { num: row.number });
       const status = document.createElement('div');
       status.className = 'menuStatus';
       status.textContent = menuStatusLabel(progress);
+      plaque.appendChild(number);
+      plaque.appendChild(status);
 
       item.appendChild(thumb);
-      item.appendChild(number);
-      item.appendChild(status);
+      item.appendChild(plaque);
       item.addEventListener('click', () => goToPuzzle(row.puzzleId));
       return item;
     }
 
     async function renderMenu() {
       document.getElementById('menuOverlay').classList.add('show');
-      PnbAdMob.showBanner();
+      showBannerIfReady();
 
       const todayStatusEl = document.getElementById('menuTodayStatus');
       const historyStripEl0 = document.getElementById('menuHistoryStrip');
@@ -2854,6 +3102,18 @@
       wireArchive();
     }
 
+    // Gate on the animated first-boot splash (see boot()): a native banner ad
+    // is a separate OS-level view, not part of the DOM/CSS stacking context,
+    // so it would otherwise visibly appear on top of the splash instead of
+    // waiting for it to finish. False only during that initial animated
+    // window; boot() flips it true (and shows any banner this screen wanted)
+    // the instant the splash actually hides.
+    let adsReady = true;
+
+    function showBannerIfReady() {
+      if (adsReady) PnbAdMob.showBanner();
+    }
+
     // Archive state: fetched once, lazily, on first open — a flat, numbered
     // list (no date-based grouping), so opening it again just re-renders the
     // already-fetched array with no repeat network round trip.
@@ -2878,7 +3138,7 @@
 
     async function openArchive() {
       document.getElementById('archiveOverlay').classList.add('show');
-      PnbAdMob.showBanner();
+      showBannerIfReady();
       if (!archiveRows) {
         const grid = document.getElementById('archiveGrid');
         grid.textContent = t('loading');
@@ -3032,6 +3292,12 @@
       if (!isFirstBoot) {
         const splashEl = document.getElementById('splashOverlay');
         if (splashEl) splashEl.style.display = 'none';
+      } else {
+        // First boot: the splash animates for a few seconds below (see the
+        // finally block) — hold off on any ad (a native view, not part of
+        // the DOM/CSS stacking, so it wouldn't otherwise wait its turn)
+        // until hideWebSplash() actually runs and flips this back on.
+        adsReady = false;
       }
 
       const bootStarted = Date.now();
@@ -3049,7 +3315,7 @@
         }
         wireHomeButton();
         wireNumbersToggle();
-        PnbAdMob.showBanner();
+        showBannerIfReady();
         const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
         pnbMark('pnb:puzzle-fetched');
         fetchPuzzleNumber(puzzle.puzzleId).then(setPuzzleTitle).catch(() => {});
@@ -3059,6 +3325,8 @@
           const remaining = SPLASH_ANIMATION_MS - (Date.now() - bootStarted);
           if (remaining > 0) await sleep(remaining);
           hideWebSplash();
+          adsReady = true;
+          showBannerIfReady();
         }
       }
     }

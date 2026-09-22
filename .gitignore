@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 
+# Working/reference files dropped in ad hoc (design inspiration, one-off
+# scripts) — not part of the shipped app.
+/scratch/
+
 # Node / Capacitor
 node_modules/
 www/
