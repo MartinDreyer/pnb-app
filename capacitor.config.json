@@ -2,12 +2,12 @@
   "appId": "dk.pnb.app",
   "appName": "Mindfill",
   "webDir": "www",
-  "backgroundColor": "#FFFFFFFF",
+  "backgroundColor": "#16231AFF",
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0,
       "launchAutoHide": false,
-      "backgroundColor": "#FFFFFFFF",
+      "backgroundColor": "#16231AFF",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_CROP",
       "showSpinner": false,

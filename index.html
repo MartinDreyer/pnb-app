@@ -19,8 +19,10 @@
          painting's available height until something forces a relayout) —
          the dvh override the line below fixes it the same way .app's
          height does. */
-      --palette-h: clamp(220px, 22vh, 360px);
-      --palette-h: clamp(220px, 22dvh, 360px);
+      /* Taller than a single swatch row needs, since .swatches is now two
+         rows (see below) instead of one. */
+      --palette-h: clamp(272px, 30vh, 400px);
+      --palette-h: clamp(272px, 30dvh, 400px);
       --bg: #FFFFFF;
       --panel: #FFFFFF;
       --panel2: #FFFFFF;
@@ -50,15 +52,23 @@
          not just cold launch) — the real viewport isn't reflected until
          something forces a relayout, e.g. rotating the device. Same bug on
          both axes: a stale height leaves a white gap below the app shell, a
-         stale (too narrow) width leaves blank space beside it. --app-vh/
-         --app-vw are kept in sync with the real innerHeight/innerWidth via
-         JS (see wireViewportSizeSync) as the primary fix; 100dvh/100dvw
-         are layered on top for browsers new enough to compute them
-         correctly on their own. */
-      height: calc(var(--app-vh, 1vh) * 100);
+         stale (too narrow) width leaves blank space beside it (which is
+         very likely what's been intermittently breaking the history/
+         archive grid's column count right after a navigation — the grid's
+         auto-fill column tracks are computed off this container's width).
+         --app-vh/--app-vw are kept in sync with the real innerHeight/
+         innerWidth via JS (see wireViewportSizeSync — an immediate sync()
+         call plus a ResizeObserver and a double-rAF fallback, so it also
+         catches WKWebView settling its bounds a frame late). Those need to
+         come LAST to actually win the cascade: 100dvh/100dvw look like the
+         more "correct" modern choice, but they're natively computed by
+         WebKit — the exact same stale-right-after-reload bug applies to
+         them too, and nothing here could ever correct it if they're the
+         declarations actually in effect. */
       height: 100dvh;
-      width: calc(var(--app-vw, 1vw) * 100);
+      height: calc(var(--app-vh, 1vh) * 100);
       width: 100dvw;
+      width: calc(var(--app-vw, 1vw) * 100);
       position: relative;
     }
 
@@ -85,6 +95,35 @@
       min-height: var(--topbar-h);
       box-sizing: border-box;
       z-index: 50;
+    }
+
+    /* In-flow row (not absolutely positioned) so it's a normal part of the
+       topbar's visible height — --topbar-h's ResizeObserver (see
+       wireTopbarHeightSync) picks up the real rendered height either way,
+       so there's no need to hide this from layout. Sized deliberately
+       chunky (8px, visible gray track) so it reads as a real progress bar
+       rather than a hairline easy to miss. Off by default — same
+       show-via-class pattern as the numbers toggle (see .numbersToggleBtn),
+       flipped on via .progressToggleBtn/wireProgressToggle. */
+    .topbarProgress {
+      display: none;
+      width: 100%;
+      height: 8px;
+      border-radius: 4px;
+      background: #e2e2e2;
+      overflow: hidden;
+    }
+
+    .topbarProgress.show {
+      display: block;
+    }
+
+    .topbarProgressFill {
+      height: 100%;
+      width: 0%;
+      background: #2a9d8f;
+      border-radius: 4px;
+      transition: width 0.3s ease;
     }
 
     .title {
@@ -149,13 +188,33 @@
     }
 
     /* Once the puzzle is finished (see revealOriginalInWrap), the working
-       canvas becomes a museum wall instead of the easel — same wallpaper
-       texture/vignette technique as .menuOverlay. overflow-y switches to
-       auto (from .canvas's usual hidden, needed while pan/zoom is active)
-       since the framed picture + plaque can be taller than the screen. */
+       canvas becomes a museum wall instead of the easel — flat color, not
+       a wallpaper texture (see .menuOverlay's comment for why: this same
+       background sits on both sides of the splash-masked reload between
+       screens, and any pop from a bare color to a decoded/tiled image —
+       or a mismatch between the two — reads as a flash). overflow-y
+       switches to auto (from .canvas's usual hidden, needed while pan/zoom
+       is active) since the framed picture + plaque can be taller than the
+       screen. */
     .canvas.revealed {
-      background: #16231a url("museum/wallpaper.jpg") center/512px auto repeat;
+      background: #16231a;
       overflow-y: auto;
+      /* .canvas is `display: grid; place-items: center` (for the normal,
+         non-scrolling puzzle view). That align-items: center carries over
+         here and is the actual thing centering the revealed painting+
+         plaque stack within .canvas — .svgWrap.revealed's own
+         justify-content only centers content inside itself, which is a
+         no-op once its height is content-driven. A grid item centered
+         (align-items: center) inside a container shorter than it grows
+         equally past both edges — including past scrollTop:0, which a
+         scroll container can never reach, permanently clipping the top of
+         tall portraits. `safe center` is the "proper" fix but Safari/
+         WKWebView (this app's actual runtime) support for the safe/unsafe
+         alignment keywords is unreliable, so use plain `start` instead:
+         .svgWrap keeps min-height:100% and its own internal centering, so
+         a stack that fits still looks centered — this only changes what
+         happens once it's taller than the screen. */
+      align-items: start;
     }
 
     .canvas.revealed::before {
@@ -183,7 +242,11 @@
 
     /* Revealed state: a vertical stack (framed painting, then plaque) that
        can grow taller than the screen and scroll (see .canvas.revealed),
-       instead of a single grid item forced to fill exactly one viewport. */
+       instead of a single grid item forced to fill exactly one viewport.
+       This justify-content only centers content within THIS box's own
+       height, which is content-driven (height:auto) once it overflows —
+       so it's a no-op for the overflow case. The clipping fix for tall
+       portraits lives one level up, on .canvas.revealed's align-items. */
     .svgWrap.revealed {
       height: auto;
       min-height: 100%;
@@ -195,8 +258,11 @@
       padding: 30px 20px;
     }
 
-    /* Injected SVG */
+    /* Injected SVG. grid-area: 1/1 (with .paintingLoader below sharing the
+       same value) puts both in the same implicit grid cell so they overlap
+       for the loader->canvas crossfade instead of stacking as two rows. */
     #pnb-svg {
+      grid-area: 1 / 1;
       width: 100%;
       height: 100%;
       min-width: 0;
@@ -208,6 +274,59 @@
       /* We handle pan/zoom ourselves */
       touch-action: none;
       transform-origin: 0 0;
+      opacity: 0;
+      transition: opacity 400ms ease;
+    }
+
+    #pnb-svg.show {
+      opacity: 1;
+    }
+
+    /* Stands in for the puzzle canvas while its SVG is still loading — same
+       box chrome (white, rounded, shadowed) as #pnb-svg itself, so the
+       canvas reads as already being there instead of popping in once
+       loaded. The diagonal hatch gently sweeping across it reads as a
+       sketch being laid in, without trying to fake the actual artwork. */
+    .paintingLoader {
+      grid-area: 1 / 1;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      background: white;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.22);
+      box-sizing: border-box;
+      overflow: hidden;
+      position: relative;
+      opacity: 1;
+      transition: opacity 400ms ease;
+    }
+
+    .paintingLoader.fadeOut {
+      opacity: 0;
+    }
+
+    .paintingLoader::before {
+      content: "";
+      position: absolute;
+      inset: -20%;
+      background-image: repeating-linear-gradient(
+        115deg,
+        transparent 0px,
+        transparent 16px,
+        rgba(17,17,17,0.07) 16px,
+        rgba(17,17,17,0.07) 18px
+      );
+      background-size: 200% 200%;
+      animation: pnbSketchSweep 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pnbSketchSweep {
+      0% { background-position: 0% 0%; opacity: 0.4; }
+      50% { background-position: 100% 60%; opacity: 0.9; }
+      100% { background-position: 0% 0%; opacity: 0.4; }
     }
 
     /* Final revealed PNG — framed like a museum piece (see .museumFrame)
@@ -221,7 +340,7 @@
       width: auto;
       height: auto;
       background: white;
-      border-width: 34px;
+      border-width: 12px;
       display: block;
       opacity: 0;
       transition: opacity 2250ms ease;
@@ -339,6 +458,7 @@
     .swatches {
       display: grid;
       grid-auto-flow: column;
+      grid-template-rows: repeat(2, 84px);
       grid-auto-columns: 84px;
       gap: 10px;
       overflow-x: auto;
@@ -719,9 +839,32 @@
       box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
     }
 
+    /* Sits to the left of .numbersToggleBtn (40px button + 8px gap). */
+    .progressToggleBtn {
+      position: fixed;
+      right: calc(12px + 48px + env(safe-area-inset-right, 0px));
+      top: calc(8px + env(safe-area-inset-top, 0px));
+      z-index: 56;
+      display: none;
+    }
+
+    .progressToggleBtn.show {
+      display: flex;
+    }
+
+    .progressToggleBtn.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(110,168,255,0.20);
+    }
+
     /* Mirrors .topbar.hasBack, reserving room on the right instead. */
     .topbar.hasNumbersToggle {
       padding-right: calc(60px + env(safe-area-inset-right, 0px));
+    }
+
+    /* Both toggle buttons show together, so reserve room for both. */
+    .topbar.hasNumbersToggle.hasProgressToggle {
+      padding-right: calc(108px + env(safe-area-inset-right, 0px));
     }
 
     /* In-app splash: painted over the native launch splash the instant the web
@@ -732,18 +875,40 @@
       position: fixed;
       inset: 0;
       z-index: 300;
-      background: var(--bg);
+      /* Flat color, not the tiled wallpaper texture the menu/archive use —
+         this needs to be up and matching the native launch splash on the
+         very first paint, with nothing left to load; a background-image
+         is one more thing that can lag a frame behind (a plain color never
+         pops in late) and the tile would need stretching or repeating at a
+         size that either blurs or visibly repeats behind the centered
+         mark anyway. */
+      background: #16231a;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 24px;
-      transition: opacity 300ms ease;
+      transition: opacity 220ms ease;
     }
 
     .splashOverlay.hide {
       opacity: 0;
       pointer-events: none;
+    }
+
+    /* The animated brand moment (logo mark + wordmark) is only for the
+       very first boot of a session — see boot()'s isFirstBoot. Every later
+       in-app menu<->puzzle navigation still needs the splash to mask the
+       reload it goes through (see showSplashForNavigation), but showing
+       the full branded splash — logo popping in, swatches starting a
+       fresh color-cycle animation — on every single navigation reads as
+       an attention-grabbing flash in its own right, not a neutral cover.
+       quickNav strips it down to a plain color wipe instead, which reads
+       as a fast transition rather than a distinct "screen" interrupting
+       the flow. */
+    .splashOverlay.quickNav .splashMark,
+    .splashOverlay.quickNav .splashTitle {
+      display: none;
     }
 
     .splashMark {
@@ -757,8 +922,26 @@
       width: 76px;
       height: 76px;
       border-radius: 18px;
+      /* White, matching the app icon's own stroke around each square (and
+         .menuBrandSwatch's border: var(--bg) below) — it was matching the
+         splash's own dark background instead, which reads as a dark gap
+         rather than the icon's actual crisp white outline. */
       border: 4px solid var(--bg);
-      animation: splashColorCycle 2.4s ease-in-out infinite;
+      /* A glossy highlight + pooled-shadow overlay on top of the animated
+         background-color below, so each chip reads as a blob of mixed
+         paint rather than a flat digital swatch. background-image is a
+         separate layer from background-color, so it doesn't interfere
+         with the keyframe animation driving the color underneath. */
+      background-image:
+        radial-gradient(circle at 30% 25%, rgba(255,255,255,0.45), rgba(255,255,255,0) 55%),
+        radial-gradient(circle at 75% 80%, rgba(0,0,0,0.22), rgba(0,0,0,0) 60%);
+      /* backwards: each swatch's staggered animation-delay (below) would
+         otherwise leave it with no background-color at all — transparent,
+         showing only its border — until its delay elapses, so the mark
+         visibly paints in stroke-first-then-fill over the first 0.6s
+         instead of appearing fully painted immediately. backwards applies
+         the 0% keyframe's color for the whole delay period too. */
+      animation: splashColorCycle 2.4s ease-in-out infinite backwards;
     }
 
     .splashSwatch:nth-child(1) { top: 0; left: 0; transform: rotate(-8deg); animation-delay: 0s; }
@@ -774,18 +957,44 @@
       100% { background-color: #6ea8ff; }
     }
 
+    /* Wordmark font: a thin, wide-tracked Didone serif (Didot/Bodoni), the
+       classic high-fashion/museum wordmark look (e.g. the Louvre's own
+       logotype) — Didot ships as a system font on macOS/iOS, this app's
+       primary target, so no webfont load is needed; Bodoni MT/Georgia
+       cover other platforms reasonably. Shared by .splashTitle and
+       .menuTitle (see their markup). */
     .splashTitle {
-      font-weight: 700;
-      font-size: 20px;
+      font-family: Didot, 'Bodoni MT', 'Playfair Display', Georgia, serif;
+      font-weight: 500;
+      font-size: 22px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
       color: var(--text);
     }
 
-    /* Brand wordmark: "Mind" plain, "fill" painted in the same 4 colors as
-       the swatch mark above it (splashSwatch/menuBrandSwatch) — like it was
-       just filled in with a brush, tying the logo to the actual mechanic.
-       Shared by .splashTitle and .menuTitle (see their markup). */
+    /* The oversized initial cap (compare "LOUVRE"'s big L against the
+       smaller caps after it) — applied once, to the wordmark's actual
+       first letter, not repeated on "Fill"'s F. */
+    .brandMind::first-letter {
+      font-size: 1.35em;
+    }
+
+    /* Brand wordmark: "MIND" plain, "FILL" painted in a vivid multi-color
+       gradient — like it was just filled in with a brush, tying the logo
+       to the actual mechanic. Shared by .splashTitle and .menuTitle (see
+       their markup); .brandMind is un-styled here (inherits the ambient
+       color — pale cream on the splash/menu screens' shared dark-green
+       backdrop, see .splashOverlay/.menuOverlay's --text override).
+       Several irregularly-placed radial blobs blended with multiply, on
+       top of the base sweep, instead of one perfectly even linear ramp —
+       reads as pooled/mixed oil paint rather than a flat digital fill. */
     .brandFill {
-      background: linear-gradient(90deg, #6ea8ff, #d98e5f, #8a6a4f, #3a3a3a);
+      background:
+        radial-gradient(70% 140% at 20% 30%, rgba(255,255,255,0.35), rgba(255,255,255,0) 55%),
+        radial-gradient(80% 160% at 55% 75%, #ff6b81 0%, rgba(255,107,129,0) 60%),
+        radial-gradient(90% 160% at 85% 25%, #ffd166 0%, rgba(255,209,102,0) 65%),
+        linear-gradient(115deg, #6ea8ff 0%, #ffb347 35%, #ff6b81 65%, #ffd166 100%);
+      background-blend-mode: overlay, multiply, multiply, normal;
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
@@ -799,7 +1008,8 @@
        through every descendant that already reads them) so the whole
        screen re-themes for the dark wall without touching each rule. */
     .menuOverlay,
-    .archiveOverlay {
+    .archiveOverlay,
+    .splashOverlay {
       --text: #f3ead4;
       --muted: #cdb98a;
       --panel2: rgba(255,255,255,0.16);
@@ -816,15 +1026,34 @@
       position: fixed;
       inset: 0;
       z-index: 200;
-      background: #16231a url("museum/wallpaper.jpg") center/512px auto repeat;
+      /* Flat color, not the tiled wallpaper texture this used to have —
+         every menu<->puzzle navigation is a full page reload masked by
+         the splash overlay (see showSplashForNavigation), so this
+         background is what the splash fades into/out of on literally
+         every navigation. A background-image has to be (re)decoded on
+         each fresh document, which could still show as a flash of the
+         plain fallback color before the tile paints in — and the tile's
+         own average tone reads as a visibly different, more saturated
+         green than a flat swatch of the same nominal color, which is its
+         own flash even once decoded. A flat color painted identically
+         everywhere (splash, this, .archiveOverlay, .canvas.revealed) has
+         nothing to pop in and nothing to mismatch. */
+      background: #16231a;
       box-sizing: border-box;
       padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
       overflow-y: auto;
-      display: none;
+      /* opacity/pointer-events instead of display:none, so appearing can
+         fade in (see .show below) instead of popping straight to visible —
+         display can't be transitioned. Always laid out (position:fixed, so
+         this costs nothing layout-wise) but inert and invisible until shown. */
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease;
     }
 
     .menuOverlay.show {
-      display: block;
+      opacity: 1;
+      pointer-events: auto;
     }
 
     /* Soft dark vignette over the wallpaper texture, instead of flat color —
@@ -839,16 +1068,32 @@
        transparent stops, which the compositor renders directly with no blur
        pass. */
     .menuOverlay::before,
-    .archiveOverlay::before {
+    .archiveOverlay::before,
+    .splashOverlay::before {
       content: "";
       position: fixed;
       inset: 0;
       z-index: -1;
       pointer-events: none;
+      /* Forces its own compositor layer — this is a `position: fixed`,
+         negative-z-index pseudo-element sitting directly over the boot
+         splash (.splashOverlay), which is exactly what debug/debug.MP4's
+         1.25-1.33s frames caught mid-flash: it briefly drops to flat
+         .splashOverlay background (#16231a) with no gradient for a frame
+         or two while the main thread is busy during boot. */
+      will-change: transform;
       background:
         radial-gradient(120% 70% at 50% -10%, rgba(255,255,255,0.10), rgba(255,255,255,0) 60%),
         radial-gradient(140% 90% at 50% 110%, rgba(0,0,0,0.55), rgba(0,0,0,0) 55%),
         linear-gradient(rgba(0,0,0,0.28), rgba(0,0,0,0.28));
+    }
+
+    /* TEMP DEBUG: disables just the splash's vignette (menuOverlay/
+       archiveOverlay keep theirs) to test whether removing it entirely
+       eliminates the flash seen in debug/debug.MP4. Revert by deleting
+       this rule once confirmed either way. */
+    .splashOverlay::before {
+      background: none;
     }
 
     .menuHeader {
@@ -872,75 +1117,86 @@
       height: 20px;
       border-radius: 6px;
       border: 2px solid var(--bg);
+      /* Same paint-blob sheen as .splashSwatch, layered over each chip's
+         own flat background-color below. */
+      background-image:
+        radial-gradient(circle at 30% 25%, rgba(255,255,255,0.45), rgba(255,255,255,0) 55%),
+        radial-gradient(circle at 75% 80%, rgba(0,0,0,0.22), rgba(0,0,0,0) 60%);
     }
 
-    .menuBrandSwatch:nth-child(1) { top: 0; left: 0; background: #6ea8ff; transform: rotate(-8deg); }
-    .menuBrandSwatch:nth-child(2) { top: 0; right: 0; background: #d98e5f; transform: rotate(10deg); }
-    .menuBrandSwatch:nth-child(3) { bottom: 0; left: 0; background: #8a6a4f; transform: rotate(12deg); }
-    .menuBrandSwatch:nth-child(4) { bottom: 0; right: 0; background: #3a3a3a; transform: rotate(-10deg); }
+    .menuBrandSwatch:nth-child(1) { top: 0; left: 0; background-color: #6ea8ff; transform: rotate(-8deg); }
+    .menuBrandSwatch:nth-child(2) { top: 0; right: 0; background-color: #d98e5f; transform: rotate(10deg); }
+    .menuBrandSwatch:nth-child(3) { bottom: 0; left: 0; background-color: #8a6a4f; transform: rotate(12deg); }
+    .menuBrandSwatch:nth-child(4) { bottom: 0; right: 0; background-color: #3a3a3a; transform: rotate(-10deg); }
 
     .menuTitle {
-      font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: 0.3px;
+      font-family: Didot, 'Bodoni MT', 'Playfair Display', Georgia, serif;
+      font-size: 24px;
+      font-weight: 500;
+      letter-spacing: 3px;
+      text-transform: uppercase;
       color: #e8c877;
       text-shadow: 0 2px 8px rgba(0,0,0,0.5);
       margin: 0;
     }
 
     /* Museum gallery-wall frame utility, shared by the home menu, archive
-       and completion-reveal screens. The corner/edge photo assets
-       (museum/frameN.jpg, a corner+edge tile pair per style) turned out not
-       to read as an actual frame once rendered — border-image DOES slice
-       them into distinct corner/edge regions correctly, but the source
-       photos' corner and edge textures look too similar to each other at
-       any size for that distinction to be visually obvious. A CSS-painted
-       bevel reads unambiguously as a frame instead: border-image-source is
-       a conic-gradient sweeping through shadow → base → highlight → hot-
-       highlight tones once per side, which (since conic-gradient's angle
-       wraps continuously around the box) naturally lands a believably lit,
-       mitred-looking corner exactly where two sides meet — no separate
-       corner asset needed. A thin dark trim ring on each side of the bevel
-       (via box-shadow, not border-image, so it doesn't consume another
-       border-image slice) completes the "moulding" look. Each numbered
-       variant is just a different gold palette for wall variety. */
+       and completion-reveal screens. Two real-photo attempts (a plain
+       border-image sprite, then one with corrected rotation-based corner/
+       edge pairing) still didn't read as a convincing moulded frame at
+       arbitrary sizes, so per a reference photo of an actual gold frame,
+       this is now CSS-painted instead: a conic-gradient border-image with
+       FOUR repeats of shadow→base→highlight→base→shadow per full turn
+       (one per side) rather than one gradual sweep around the whole box.
+       Since a conic-gradient's stops are placed by angle from the box's
+       center, repeating the ramp every 90° puts a highlight at the
+       midpoint of every side alike and a shadow dip at every corner (where
+       two sides' ramps meet) — exactly the "bright rounded bulge down the
+       centre of each side, dark mitred seam at each corner" look of a real
+       moulding profile, with no separate corner asset needed. A thin dark
+       trim ring (box-shadow, not border-image, so it doesn't consume
+       another slice) front and back of the bevel completes the moulding
+       "steps". Each numbered variant is a different gold palette. */
     .museumFrame {
       box-sizing: border-box;
       border-style: solid;
-      border-width: 22px;
+      border-width: 8px;
       border-image-slice: 1;
-      border-image-source: conic-gradient(from 315deg at 50% 50%,
-        var(--frame-hi, #fff6da) 0deg,
-        var(--frame-base, #d9a53c) 45deg,
-        var(--frame-mid, #a9741f) 90deg,
-        var(--frame-shadow, #6b4515) 135deg,
-        var(--frame-mid, #a9741f) 180deg,
-        var(--frame-base, #d9a53c) 225deg,
-        var(--frame-hi, #fff6da) 270deg,
-        var(--frame-hot, #fffaf0) 315deg,
-        var(--frame-hi, #fff6da) 360deg);
+      border-image-source: conic-gradient(from 0deg,
+        var(--frame-hi, #f3d78a) 0deg,
+        var(--frame-base, #c99a3f) 35deg,
+        var(--frame-shadow, #6b4515) 42.5deg,
+        var(--frame-base, #c99a3f) 50deg,
+        var(--frame-hi, #f3d78a) 90deg,
+        var(--frame-base, #c99a3f) 125deg,
+        var(--frame-shadow, #6b4515) 132.5deg,
+        var(--frame-base, #c99a3f) 140deg,
+        var(--frame-hi, #f3d78a) 180deg,
+        var(--frame-base, #c99a3f) 215deg,
+        var(--frame-shadow, #6b4515) 222.5deg,
+        var(--frame-base, #c99a3f) 230deg,
+        var(--frame-hi, #f3d78a) 270deg,
+        var(--frame-base, #c99a3f) 305deg,
+        var(--frame-shadow, #6b4515) 312.5deg,
+        var(--frame-base, #c99a3f) 320deg,
+        var(--frame-hi, #f3d78a) 360deg);
       box-shadow:
-        0 0 0 2px var(--frame-trim, #4a2f0d),
-        inset 0 0 0 2px var(--frame-trim, #4a2f0d),
+        0 0 0 2px var(--frame-trim, #3c2508),
+        inset 0 0 0 2px var(--frame-trim, #3c2508),
         0 12px 26px rgba(0,0,0,0.45);
     }
 
     .museumFrame1 {
-      --frame-shadow: #6b4515; --frame-mid: #a9741f; --frame-base: #d9a53c;
-      --frame-hi: #f6d98a; --frame-hot: #fff6da; --frame-trim: #4a2f0d;
+      --frame-shadow: #6b4515; --frame-base: #c99a3f; --frame-hi: #f6e0a3; --frame-trim: #3c2508;
     }
     .museumFrame2 {
-      --frame-shadow: #4a2e10; --frame-mid: #8a5a1c; --frame-base: #c4922f;
-      --frame-hi: #e9c876; --frame-hot: #fbe9b8; --frame-trim: #2f1c08;
+      --frame-shadow: #4a2e10; --frame-base: #b0822c; --frame-hi: #efc978; --frame-trim: #2a1a08;
     }
     .museumFrame3 {
-      --frame-shadow: #3c2c1a; --frame-mid: #6e5230; --frame-base: #a4834a;
-      --frame-hi: #c9ac74; --frame-hot: #e6d3a0; --frame-trim: #22160a;
+      --frame-shadow: #3c2c1a; --frame-base: #8f6e3c; --frame-hi: #ceab6c; --frame-trim: #221608;
     }
     .museumFrame4 {
-      --frame-shadow: #7a4f1a; --frame-mid: #b17e2a; --frame-base: #e0ad4a;
-      --frame-hi: #ffe19a; --frame-hot: #fff4d8; --frame-trim: #5c3a12;
+      --frame-shadow: #7a4f1a; --frame-base: #d19c3f; --frame-hi: #ffe6a8; --frame-trim: #4a2e0e;
     }
 
     /* Small brass plaque caption under a framed thumbnail, like a museum
@@ -993,6 +1249,13 @@
       justify-content: center;
       font-size: 30px;
       color: #b8ac8f;
+      /* Border widths vary per item (3-14px, see the nth-child cycle below)
+         for a hand-hung look. Without border-box, that border is added on
+         top of width/height instead of eating into them, so a heavy-bordered
+         thumb's actual footprint balloons past its 130px grid cell and
+         visibly spills into the next column/row — the layout "disordering"
+         seen in debug/disorder.png. */
+      box-sizing: border-box;
     }
 
     /* Unpainted-puzzle placeholder: a plain primed canvas rather than the
@@ -1003,7 +1266,7 @@
     }
 
     #menuTodayThumb {
-      border-width: 30px;
+      border-width: 10px;
     }
 
     .menuTodayHeading {
@@ -1046,14 +1309,12 @@
     /* On a screen wide enough to fit several cards per row (iPad and up), a
        single horizontally-scrolling band wastes most of the screen's width
        and height. Switch to a wrapping grid of several bands instead — same
-       cards, same click targets, just laid out to use the extra room. Extra
-       row-gap (vs. column-gap) gives the per-item translateY stagger below
-       room to breathe without neighbouring rows overlapping. */
+       cards, same click targets, just laid out to use the extra room. */
     @media (min-width: 700px) {
       .menuHistoryStrip {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-        row-gap: 34px;
+        row-gap: 26px;
         column-gap: 18px;
         overflow-x: visible;
         overflow-y: visible;
@@ -1062,21 +1323,6 @@
       .menuHistoryStrip .menuHistoryItem {
         width: 100%;
       }
-
-      /* Loose "salon hang" variety: alternating tilt/rise per item instead
-         of a rigid grid of identical frames. Only on screens wide enough to
-         show the grid (see above) — in the single-row scrolling strip on
-         phones, .menuHistoryStrip keeps overflow-y: hidden, so an offset
-         there would just get clipped. */
-      .menuHistoryItem:nth-child(6n+1) { transform: rotate(-2deg) translateY(2px); }
-      .menuHistoryItem:nth-child(6n+2) { transform: rotate(1.5deg) translateY(14px); }
-      .menuHistoryItem:nth-child(6n+3) { transform: rotate(-1deg) translateY(-8px); }
-      .menuHistoryItem:nth-child(6n+4) { transform: rotate(2deg) translateY(6px); }
-      .menuHistoryItem:nth-child(6n+5) { transform: rotate(-1.5deg) translateY(-4px); }
-      .menuHistoryItem:nth-child(6n+6) { transform: rotate(1deg) translateY(10px); }
-
-      /* Every third frame a touch taller, for size variety along the wall. */
-      .menuHistoryItem:nth-child(3n) .menuThumb { aspect-ratio: 4 / 5; height: auto; }
     }
 
     .menuHistoryItem {
@@ -1109,11 +1355,31 @@
       color: #b8ac8f;
     }
 
-    /* Cycle the 4 frame styles across the wall by position. */
-    .menuHistoryItem:nth-child(4n+1) .menuThumb { --frame-shadow: #6b4515; --frame-mid: #a9741f; --frame-base: #d9a53c; --frame-hi: #f6d98a; --frame-hot: #fff6da; --frame-trim: #4a2f0d; }
-    .menuHistoryItem:nth-child(4n+2) .menuThumb { --frame-shadow: #4a2e10; --frame-mid: #8a5a1c; --frame-base: #c4922f; --frame-hi: #e9c876; --frame-hot: #fbe9b8; --frame-trim: #2f1c08; }
-    .menuHistoryItem:nth-child(4n+3) .menuThumb { --frame-shadow: #3c2c1a; --frame-mid: #6e5230; --frame-base: #a4834a; --frame-hi: #c9ac74; --frame-hot: #e6d3a0; --frame-trim: #22160a; }
-    .menuHistoryItem:nth-child(4n+4) .menuThumb { --frame-shadow: #7a4f1a; --frame-mid: #b17e2a; --frame-base: #e0ad4a; --frame-hi: #ffe19a; --frame-hot: #fff4d8; --frame-trim: #5c3a12; }
+    /* Cycle 6 gold palettes and, separately, 7 border widths across the wall
+       by position — mismatched, coprime cycle lengths (42 unique
+       combinations before repeating) so neighbouring frames rarely match,
+       for a hand-hung, not-mass-produced feel, without needing per-item
+       random values from JS. Replaces an earlier alternating-rotation tilt,
+       which is gone now (frames hang straight). Both cycles deliberately
+       span a wide range — hue from pale champagne through classic yellow-
+       gold, amber, rose/copper, olive and deep bronze; width from a hair-
+       thin 3px up to a heavy 14px — rather than small tonal/size tweaks, so
+       the variation actually reads at a glance instead of just on close
+       inspection. */
+    .menuHistoryItem:nth-child(6n+1) .menuThumb { --frame-shadow: #6b4515; --frame-base: #c99a3f; --frame-hi: #f6e0a3; --frame-trim: #3c2508; }
+    .menuHistoryItem:nth-child(6n+2) .menuThumb { --frame-shadow: #4a2e10; --frame-base: #b0822c; --frame-hi: #efc978; --frame-trim: #2a1a08; }
+    .menuHistoryItem:nth-child(6n+3) .menuThumb { --frame-shadow: #7a6a42; --frame-base: #d8c48f; --frame-hi: #fff3d1; --frame-trim: #4a4026; }
+    .menuHistoryItem:nth-child(6n+4) .menuThumb { --frame-shadow: #6b3a2a; --frame-base: #c98a5a; --frame-hi: #f6c99a; --frame-trim: #3c1f14; }
+    .menuHistoryItem:nth-child(6n+5) .menuThumb { --frame-shadow: #5a4a1a; --frame-base: #a89050; --frame-hi: #e0cf8f; --frame-trim: #332a0e; }
+    .menuHistoryItem:nth-child(6n+6) .menuThumb { --frame-shadow: #7a4f1a; --frame-base: #d19c3f; --frame-hi: #ffe6a8; --frame-trim: #4a2e0e; }
+
+    .menuHistoryItem:nth-child(7n+1) .menuThumb { border-width: 3px; }
+    .menuHistoryItem:nth-child(7n+2) .menuThumb { border-width: 10px; }
+    .menuHistoryItem:nth-child(7n+3) .menuThumb { border-width: 5px; }
+    .menuHistoryItem:nth-child(7n+4) .menuThumb { border-width: 14px; }
+    .menuHistoryItem:nth-child(7n+5) .menuThumb { border-width: 6px; }
+    .menuHistoryItem:nth-child(7n+6) .menuThumb { border-width: 11px; }
+    .menuHistoryItem:nth-child(7n+7) .menuThumb { border-width: 4px; }
 
     .menuHistoryNumber {
       font-size: 11px;
@@ -1127,6 +1393,45 @@
     .menuHistoryEmpty {
       font-size: 13px;
       color: var(--muted);
+    }
+
+    /* Ghost/skeleton placeholders: shown wherever content is about to be
+       fetched and inserted, sized and positioned exactly like the real
+       content it stands in for, so swapping one for the other never
+       changes layout — that's what actually removes the "jump", not the
+       shimmer itself (which is just there to read as "loading" rather
+       than "broken/empty"). Reused for the menu's today-card thumb/status,
+       history strip cards, and the archive grid. */
+    .skeleton {
+      position: relative;
+      overflow: hidden;
+      background: rgba(255,255,255,0.08) !important;
+      background-image: none !important;
+    }
+
+    .skeleton::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: linear-gradient(100deg,
+        rgba(255,255,255,0) 30%,
+        rgba(255,255,255,0.16) 50%,
+        rgba(255,255,255,0) 70%);
+      background-size: 200% 100%;
+      animation: pnbShimmer 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pnbShimmer {
+      0% { background-position: 140% 0; }
+      100% { background-position: -140% 0; }
+    }
+
+    /* Text-shaped skeleton bar, standing in for a line of copy. */
+    .skeletonText {
+      display: inline-block;
+      height: 0.8em;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.14);
     }
 
     .menuArchiveBtn {
@@ -1150,20 +1455,30 @@
 
     /* Archive overlay: a flat grid of every past, numbered puzzle. Same
        layering approach as .menuOverlay (fixed, above everything but below
-       nothing since it's only ever opened from the menu). */
+       nothing since it's only ever opened from the menu) — flat color for
+       the same reason, see .menuOverlay's comment. */
     .archiveOverlay {
       position: fixed;
       inset: 0;
       z-index: 210;
-      background: #16231a url("museum/wallpaper.jpg") center/512px auto repeat;
+      background: #16231a;
       box-sizing: border-box;
       padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
       overflow-y: auto;
-      display: none;
+      /* opacity/transform instead of display:none — see .menuOverlay's
+         identical reasoning. A small upward slide alongside the fade reads
+         as sliding the archive in, rather than the flat cut a display swap
+         gives, closing the same "jarring switch" gap the user pointed out. */
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: opacity 260ms ease, transform 260ms ease;
     }
 
     .archiveOverlay.show {
-      display: block;
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
     }
 
     .archiveHeader {
@@ -1202,7 +1517,7 @@
       margin-top: 18px;
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-      row-gap: 34px;
+      row-gap: 26px;
       column-gap: 18px;
     }
 
@@ -1300,6 +1615,10 @@
        .svgWrap.revealed), not a fixed bottom sheet covering it. */
     .triviaPanel {
       --muted: #7a6a4a;
+      /* Plain system sans, not the rounded ui-rounded stack used to sit here —
+         SF Pro Rounded read too soft/toy-like for an engraved museum placard.
+         Still sans-serif (no return to the old serif look), just sturdier. */
+      font-family: ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
       width: 100%;
       max-width: 420px;
       background: #f6efdd;
@@ -1319,9 +1638,8 @@
     }
 
     .triviaTitle {
-      font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
       font-weight: 750;
-      font-size: 16px;
+      font-size: 17px;
       letter-spacing: 0.2px;
       text-align: center;
       margin: 0 0 2px;
@@ -1404,7 +1722,7 @@
         <div class="splashSwatch"></div>
         <div class="splashSwatch"></div>
       </div>
-      <div class="splashTitle">Mind<span class="brandFill">fill</span></div>
+      <div class="splashTitle"><span class="brandMind">Mind</span><span class="brandFill">fill</span></div>
     </div>
 
     <div class="menuOverlay" id="menuOverlay">
@@ -1415,7 +1733,7 @@
           <div class="menuBrandSwatch"></div>
           <div class="menuBrandSwatch"></div>
         </div>
-        <h1 class="menuTitle">Mind<span class="brandFill">fill</span></h1>
+        <h1 class="menuTitle"><span class="brandMind">Mind</span><span class="brandFill">fill</span></h1>
       </div>
       <button type="button" class="menuTodayCard" id="menuTodayCard">
         <div class="menuThumb museumFrame1" id="menuTodayThumb">🎨</div>
@@ -1443,6 +1761,7 @@
 
     <div class="homeBtn zoomBtn" id="homeBtn" role="button" tabindex="0" data-i18n-aria="backToMenuLabel">←</div>
     <div class="numbersToggleBtn zoomBtn" id="numbersToggleBtn" role="button" tabindex="0" aria-pressed="false" data-i18n-aria="numbersToggleLabel">🔢</div>
+    <div class="progressToggleBtn zoomBtn" id="progressToggleBtn" role="button" tabindex="0" aria-pressed="false" data-i18n-aria="progressToggleLabel">📊</div>
 
     <div class="fitWarning" id="fitWarning" data-i18n="fitWarning"></div>
     <div class="topbar">
@@ -1454,6 +1773,7 @@
            you're looking at after opening one from the Archive/history. -->
       <div class="title" id="puzzleTitle"></div>
       <div class="hint" data-i18n="topbarHint"></div>
+      <div class="topbarProgress" id="topbarProgress"><div class="topbarProgressFill" id="topbarProgressFill"></div></div>
     </div>
 
     <div class="canvas">
@@ -1572,6 +1892,22 @@
         document.documentElement.style.setProperty('--app-vw', `${window.innerWidth * 0.01}px`);
       };
       sync();
+      // The immediate sync() above can still capture a stale value: on a
+      // fresh reload, WKWebView sometimes hasn't finished settling its own
+      // bounds by the time this script starts running, and — since nothing
+      // about the viewport changes from the OS's point of view afterwards —
+      // no 'resize'/'orientationchange'/visualViewport event ever fires to
+      // correct it. That's what let the grid below visibly snap from a
+      // narrow, wrong column count to the right one well after first paint.
+      // A ResizeObserver on <html> catches WKWebView's own delayed internal
+      // relayout directly (a real box-size change), which those events
+      // don't; two rAFs is a standard "wait until layout has definitely
+      // settled" fallback for the same gap. Both call the same idempotent
+      // sync(), so doing this more than strictly necessary is harmless.
+      requestAnimationFrame(() => requestAnimationFrame(sync));
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(sync).observe(document.documentElement);
+      }
       window.addEventListener('resize', sync);
       window.addEventListener('orientationchange', sync);
       if (window.visualViewport) {
@@ -1848,7 +2184,8 @@
     // a display preference, not per-puzzle progress, so it's a single flag
     // rather than something keyed by puzzleId like the progress store above.
     function loadHideNumbersPref() {
-      try { return localStorage.getItem('pnb_hide_painted_numbers') === '1'; } catch (_e) { return false; }
+      // Default is "hide" — only an explicit prior opt-out ('0') shows numbers.
+      try { return localStorage.getItem('pnb_hide_painted_numbers') !== '0'; } catch (_e) { return true; }
     }
 
     function saveHideNumbersPref(value) {
@@ -1860,6 +2197,19 @@
     // (wired once, outside loadAndShow's per-puzzle closure) can re-apply the
     // preference to whichever puzzle happens to be open.
     let currentPaintable = [];
+
+    // Whether the topbar progress bar is shown — same off-by-default,
+    // single-flag pattern as loadHideNumbersPref above (a display
+    // preference, not per-puzzle state).
+    function loadShowProgressPref() {
+      try { return localStorage.getItem('pnb_show_progress_bar') === '1'; } catch (_e) { return false; }
+    }
+
+    function saveShowProgressPref(value) {
+      try { localStorage.setItem('pnb_show_progress_bar', value ? '1' : '0'); } catch (_e) { /* ignore */ }
+    }
+
+    let showProgressEnabled = loadShowProgressPref();
 
     // The generator's SVGs draw each region's number as a `<g class="label">`
     // immediately following its `<path>` sibling (confirmed in paintings/paintbynumbers.svg,
@@ -1963,6 +2313,12 @@
     function checkFitsWithinWrap(el, wrapEl) {
       const warningEl = document.getElementById('fitWarning');
       if (!warningEl) return;
+      // The puzzle SVG is torn out of the DOM once the puzzle is completed
+      // (see revealOriginalInWrap) but this fn stays bound to a resize
+      // listener referencing it — a later resize/orientation-change would
+      // otherwise see a detached, zero-sized el and wrongly flag "doesn't
+      // fit" over the finished reveal screen.
+      if (!el.isConnected) return;
       const elRect = el.getBoundingClientRect();
       const wrapRect = wrapEl.getBoundingClientRect();
       const tolerance = 1;
@@ -2860,13 +3216,27 @@
       }
 
       async function loadAndShow(svgUrl, referenceImageUrl) {
+        // Reopening an already-finished puzzle: skip loading/painting the
+        // interactive SVG entirely and go straight to the reveal. Doing the
+        // full load first and only then discovering it's complete (the old
+        // flow) briefly inserted the raw, all-white puzzle SVG into the DOM
+        // before immediately tearing it out again — that's what flashed.
+        if (getPuzzleProgress(puzzle.puzzleId).completed) {
+          revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
+          return;
+        }
+
         svgWrap.innerHTML = '';
         const fitWarningEl = document.getElementById('fitWarning');
         if (fitWarningEl) fitWarningEl.classList.remove('show');
-        const msg = document.createElement('div');
-        msg.className = 'loading';
-        msg.textContent = t('loadingPainting');
-        svgWrap.appendChild(msg);
+        // A same-shaped white canvas placeholder (see .paintingLoader) instead
+        // of a small text message — so the canvas reads as already being
+        // there from the first frame, with a faint sketching animation
+        // standing in for the drawing rather than a blank wait, instead of
+        // that whole box popping in abruptly once the real SVG is ready.
+        const loader = document.createElement('div');
+        loader.className = 'paintingLoader';
+        svgWrap.appendChild(loader);
 
         // Ensure palette is visible when starting/restarting a painting.
         const paletteEl = document.querySelector('.palette');
@@ -2876,8 +3246,14 @@
         pnbMark('pnb:svg-loaded');
         const annotated = annotateSvg(svg, palette);
         pnbMark('pnb:svg-annotated');
-        svgWrap.innerHTML = '';
+        // Crossfade the real canvas in over the placeholder rather than
+        // swapping straight from one to the other.
         svgWrap.appendChild(annotated);
+        requestAnimationFrame(() => {
+          annotated.classList.add('show');
+          loader.classList.add('fadeOut');
+          setTimeout(() => loader.remove(), 400);
+        });
 
         hintTargets.annotated = annotated;
         hintsRemaining = HINT_LIMIT;
@@ -2888,6 +3264,14 @@
         const paintable = Array.from(annotated.querySelectorAll('path')).filter(p => p.dataset.colorNum && p.dataset.colorNum !== '-1');
         const totalToPaint = paintable.length;
         let paintedCount = 0;
+
+        const progressFillEl = document.getElementById('topbarProgressFill');
+        function updateProgressBar() {
+          if (!progressFillEl) return;
+          const pct = totalToPaint > 0 ? (paintedCount / totalToPaint) * 100 : 0;
+          progressFillEl.style.width = `${pct}%`;
+        }
+        updateProgressBar();
 
         // Per-color tracking for the palette UI.
         const totalByNum = new Map();
@@ -2906,14 +3290,10 @@
           setSwatchCount(counterByNum, c.num, 0, totalByNum.get(c.num) || 0);
         }
 
-        // Set before the restore loop below runs (it replays every already-
-        // painted region, including the final one on an already-finished
-        // puzzle, through this same onCorrectPaint completion branch). Only
-        // a completion that happens live, during this session, should show
-        // an interstitial — reopening an already-finished puzzle from the
-        // menu/history should go straight to the reveal with no ad.
-        let wasAlreadyCompleted = false;
-
+        // getPuzzleProgress(...).completed is always false at this point —
+        // the completed case is handled above, before loadAndShow does any
+        // of this work — so every completion reached here happens live,
+        // during this session, and always gets the interstitial treatment.
         function onCorrectPaint(_path) {
           paintedCount += 1;
           const n = Number(_path.dataset.colorNum);
@@ -2921,13 +3301,10 @@
           paintedByNum.set(n, next);
           setSwatchCount(counterByNum, n, next, totalByNum.get(n) || 0);
           updateNumberVisibility(_path);
+          updateProgressBar();
           markPathPainted(puzzle.puzzleId, Number(_path.dataset.pnbIndex));
           if (totalToPaint > 0 && paintedCount >= totalToPaint) {
             markPuzzleCompleted(puzzle.puzzleId);
-            if (wasAlreadyCompleted) {
-              revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
-              return;
-            }
             // Let the completion feel (final swatch fill animation) land before
             // any ad interrupts it; PnbAdMob no-ops/calls back instantly in
             // plain-browser dev or if no ad is available.
@@ -2940,9 +3317,8 @@
         }
 
         // Restore any previously painted regions for this puzzle (e.g. the
-        // user left for the menu, or is reopening a finished puzzle).
+        // user left for the menu and came back mid-puzzle).
         const savedProgress = getPuzzleProgress(puzzle.puzzleId);
-        wasAlreadyCompleted = savedProgress.completed;
         for (const index of savedProgress.painted) {
           const p = paintable[index];
           if (!p || p.dataset.painted === '1') continue;
@@ -2994,12 +3370,40 @@
       return m ? decodeURIComponent(m[1]) : null;
     }
 
-    function goToPuzzle(idOrToday) {
+    // Fades the splash overlay back to fully visible before a navigation
+    // reload, mirroring how boot() fades it back OUT once the destination
+    // page is ready. Without this, the outgoing screen cuts instantly to
+    // location.reload()'s blank flash; with it, that flash happens entirely
+    // behind an already-opaque green overlay — the reload is invisible, and
+    // the fresh document's own splashOverlay (opaque by default until this
+    // page's earlier hideWebSplash() call, which doesn't carry across the
+    // reload) picks up exactly where this one left off.
+    function showSplashForNavigation() {
+      const el = document.getElementById('splashOverlay');
+      if (!el) return Promise.resolve();
+      if (splashHideTimeoutId !== null) {
+        clearTimeout(splashHideTimeoutId);
+        splashHideTimeoutId = null;
+      }
+      el.style.display = '';
+      el.classList.remove('hide');
+      // Plain color wipe, not the full branded moment — see the .quickNav
+      // CSS comment. The destination page adds this same class at the top
+      // of boot() (for every non-first boot) so the incoming side matches;
+      // it can't be inherited across the reload since that's a fresh
+      // document.
+      el.classList.add('quickNav');
+      return new Promise((resolve) => setTimeout(resolve, 220));
+    }
+
+    async function goToPuzzle(idOrToday) {
+      await showSplashForNavigation();
       location.hash = `puzzle=${encodeURIComponent(idOrToday)}`;
       location.reload();
     }
 
-    function backToMenu() {
+    async function backToMenu() {
+      await showSplashForNavigation();
       location.hash = '';
       location.reload();
     }
@@ -3016,16 +3420,69 @@
     // isn't worth the extra load work, and it keeps the reveal a surprise.
     function setMenuThumb(thumbEl, referenceImageUrl, completed) {
       thumbEl.classList.add('museumFrame');
+      thumbEl.classList.remove('skeleton');
       if (completed) {
         thumbEl.textContent = '';
         thumbEl.classList.remove('menuThumbBlank');
         thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
-        thumbEl.style.backgroundSize = 'cover';
+        thumbEl.style.backgroundSize = 'contain';
+        thumbEl.style.backgroundRepeat = 'no-repeat';
         thumbEl.style.backgroundPosition = 'center';
+        // Size the frame itself to the painting's real proportions instead
+        // of a fixed square/box — a plain preload just to read
+        // naturalWidth/naturalHeight (the visible background-image above
+        // is already what actually paints). Keeps the CSS-declared
+        // width/height as a fallback until this resolves.
+        const probe = new Image();
+        probe.onload = () => {
+          if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
+            thumbEl.style.aspectRatio = `${probe.naturalWidth} / ${probe.naturalHeight}`;
+            thumbEl.style.height = 'auto';
+          }
+        };
+        probe.src = referenceImageUrl;
       } else {
         thumbEl.textContent = '✏️';
         thumbEl.classList.add('menuThumbBlank');
         thumbEl.style.backgroundImage = 'none';
+        thumbEl.style.aspectRatio = '';
+        thumbEl.style.height = '';
+      }
+    }
+
+    // A ghost stand-in for buildHistoryCard's output — same classes/
+    // structure (so it's sized and framed identically to the real card,
+    // museumFrame border included) with shimmering placeholders instead of
+    // real content. Shown immediately, before the network round trip that
+    // buildHistoryCard's data depends on even starts, so the strip/grid
+    // never collapses to empty and then jumps open once data arrives.
+    function buildSkeletonHistoryCard() {
+      const item = document.createElement('div');
+      item.className = 'menuHistoryItem';
+
+      const thumb = document.createElement('div');
+      thumb.className = 'menuThumb museumFrame skeleton';
+      item.appendChild(thumb);
+
+      const plaque = document.createElement('div');
+      plaque.className = 'menuPlaque';
+      const number = document.createElement('div');
+      number.className = 'menuHistoryNumber skeletonText skeleton';
+      number.style.width = '2.4em';
+      const status = document.createElement('div');
+      status.className = 'menuStatus skeletonText skeleton';
+      status.style.width = '4.2em';
+      plaque.appendChild(number);
+      plaque.appendChild(status);
+      item.appendChild(plaque);
+
+      return item;
+    }
+
+    function renderSkeletonHistoryCards(container, count) {
+      container.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        container.appendChild(buildSkeletonHistoryCard());
       }
     }
 
@@ -3063,16 +3520,26 @@
       document.getElementById('menuOverlay').classList.add('show');
       showBannerIfReady();
 
+      const todayThumbEl0 = document.getElementById('menuTodayThumb');
       const todayStatusEl = document.getElementById('menuTodayStatus');
       const historyStripEl0 = document.getElementById('menuHistoryStrip');
-      todayStatusEl.textContent = t('loading');
-      historyStripEl0.innerHTML = '';
+      // Ghost state while both fetches are in flight — see
+      // buildSkeletonHistoryCard's comment for why this (not the shimmer
+      // itself) is what actually stops the menu from jumping open.
+      todayThumbEl0.textContent = '';
+      todayThumbEl0.classList.add('skeleton');
+      todayStatusEl.textContent = '';
+      todayStatusEl.classList.add('skeletonText', 'skeleton');
+      todayStatusEl.style.width = '5em';
+      renderSkeletonHistoryCards(historyStripEl0, 6);
 
       const [todayResult, historyResult] = await Promise.allSettled([fetchActivePuzzle(), fetchRecentPuzzleHistory()]);
 
       const todayCard = document.getElementById('menuTodayCard');
       const todayThumb = document.getElementById('menuTodayThumb');
       const todayStatus = document.getElementById('menuTodayStatus');
+      todayStatus.classList.remove('skeletonText', 'skeleton');
+      todayStatus.style.width = '';
       if (todayResult.status === 'fulfilled') {
         const progress = getPuzzleProgress(todayResult.value.puzzleId);
         todayStatus.textContent = menuStatusLabel(progress);
@@ -3080,6 +3547,8 @@
         todayCard.addEventListener('click', () => goToPuzzle('today'));
       } else {
         console.error(todayResult.reason);
+        todayThumb.classList.remove('skeleton');
+        todayThumb.textContent = '⚠️';
         todayStatus.textContent = t('errorNoActivePuzzle');
         todayCard.disabled = true;
       }
@@ -3141,7 +3610,7 @@
       showBannerIfReady();
       if (!archiveRows) {
         const grid = document.getElementById('archiveGrid');
-        grid.textContent = t('loading');
+        renderSkeletonHistoryCards(grid, 12);
         archiveRows = await fetchPuzzleArchive();
       }
       renderArchiveGrid();
@@ -3196,6 +3665,33 @@
       });
     }
 
+    function wireProgressToggle() {
+      const btn = document.getElementById('progressToggleBtn');
+      const bar = document.getElementById('topbarProgress');
+      btn.classList.add('show');
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.classList.add('hasProgressToggle');
+
+      const applyState = () => {
+        btn.classList.toggle('active', showProgressEnabled);
+        btn.setAttribute('aria-pressed', String(showProgressEnabled));
+        if (bar) bar.classList.toggle('show', showProgressEnabled);
+      };
+      applyState();
+
+      const activate = () => {
+        showProgressEnabled = !showProgressEnabled;
+        saveShowProgressPref(showProgressEnabled);
+        applyState();
+      };
+      btn.addEventListener('click', activate);
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        activate();
+      });
+    }
+
     // On native (iOS/Android), Capacitor shows a static launch splash from native
     // code before any web content loads. `#splashOverlay` is plain HTML/CSS (no JS
     // needed to paint it, and it keeps animating via CSS alone), so the instant the
@@ -3216,11 +3712,17 @@
     // one full cycle. Keep this in sync if those CSS values change.
     const SPLASH_ANIMATION_MS = 3000;
 
+    // Tracked so showSplashForNavigation can cancel it — otherwise a
+    // navigation started right after this page's own splash finished
+    // hiding could race this pending display:none against the fade back
+    // in it needs to show for the upcoming reload.
+    let splashHideTimeoutId = null;
+
     function hideWebSplash() {
       const el = document.getElementById('splashOverlay');
       if (!el) return;
       el.classList.add('hide');
-      setTimeout(() => { el.style.display = 'none'; }, 300);
+      splashHideTimeoutId = setTimeout(() => { el.style.display = 'none'; }, 220);
     }
 
     // Lightweight, opt-in perf instrumentation (see PERFORMANCE.md). Marks
@@ -3282,23 +3784,31 @@
       wireViewportSizeSync();
       PnbAdMob.init();
 
-      // The animated splash is a first-impression/branding moment, not a generic
-      // "please wait" spinner — it should only play once per app session (native
-      // cold start), not replay in full on every in-app menu<->puzzle navigation
-      // (which is reload-based, see goToPuzzle/backToMenu). sessionStorage survives
-      // those reloads (same WebView instance) but resets on a real app relaunch.
+      // The splash now stays up and masks EVERY boot, not just the first —
+      // this app navigates menu<->puzzle via a real location.reload() (see
+      // goToPuzzle/backToMenu), which flashes blank/default-styled markup
+      // between unload and this script re-running. Hiding the splash the
+      // instant it's ready to (rather than jump-cutting straight to
+      // whatever's rendered so far) is what actually smooths that over.
+      // Only the FIRST boot per session pads out to the full brand-moment
+      // animation length below — later navigations hide it the instant
+      // content is ready, so the app still feels immediate rather than
+      // replaying the animation every time. sessionStorage survives
+      // reloads (same WebView instance) but resets on a real app relaunch.
       const isFirstBoot = !sessionStorage.getItem('pnb_booted');
       try { sessionStorage.setItem('pnb_booted', '1'); } catch (_e) { /* ignore */ }
+      // Plain color wipe (no logo/animation) on every boot after the
+      // first — see the .quickNav CSS comment. Applied here too (not just
+      // in showSplashForNavigation) since a fresh reload's document never
+      // carries classes over from the page that triggered it.
       if (!isFirstBoot) {
         const splashEl = document.getElementById('splashOverlay');
-        if (splashEl) splashEl.style.display = 'none';
-      } else {
-        // First boot: the splash animates for a few seconds below (see the
-        // finally block) — hold off on any ad (a native view, not part of
-        // the DOM/CSS stacking, so it wouldn't otherwise wait its turn)
-        // until hideWebSplash() actually runs and flips this back on.
-        adsReady = false;
+        if (splashEl) splashEl.classList.add('quickNav');
       }
+      // Hold off on any ad (a native view, not part of the DOM/CSS
+      // stacking, so it wouldn't otherwise wait its turn) until the splash
+      // covering it has actually finished hiding, below.
+      adsReady = false;
 
       const bootStarted = Date.now();
       try {
@@ -3315,6 +3825,7 @@
         }
         wireHomeButton();
         wireNumbersToggle();
+        wireProgressToggle();
         showBannerIfReady();
         const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
         pnbMark('pnb:puzzle-fetched');
@@ -3324,10 +3835,17 @@
         if (isFirstBoot) {
           const remaining = SPLASH_ANIMATION_MS - (Date.now() - bootStarted);
           if (remaining > 0) await sleep(remaining);
-          hideWebSplash();
-          adsReady = true;
-          showBannerIfReady();
         }
+        // One more beat behind the mask before revealing anything: a fresh
+        // reload can still be mid-reflow right as this resolves (e.g.
+        // WKWebView settling its real bounds a frame late — see
+        // wireViewportSizeSync's ResizeObserver/double-rAF correction for
+        // that specific case) and two rAFs is enough for any such pending
+        // layout to finish, so it never becomes visible.
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        hideWebSplash();
+        adsReady = true;
+        showBannerIfReady();
       }
     }
 

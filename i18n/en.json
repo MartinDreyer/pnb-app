@@ -16,6 +16,7 @@
   "archiveEmpty": "No past puzzles yet.",
   "backToMenuLabel": "Back to menu",
   "numbersToggleLabel": "Hide numbers on painted areas",
+  "progressToggleLabel": "Show progress bar",
   "puzzleNumberTitle": "Painting #{{number}}",
   "topbarHint": "Pick a color, and tap the regions",
   "loading": "Loading…",

@@ -29,8 +29,40 @@ window.PnbAdMob = (function () {
   // still corrects this afterwards if the real value ever differs.
   const ESTIMATED_BANNER_H = 90;
 
+  // The native plugin's `margin` for BOTTOM_CENTER pins the banner's bottom
+  // edge to (safeAreaLayoutGuide.bottom - margin) — see BannerExecutor.swift.
+  // With margin 0 that's flush with the safe area, i.e. just above the home
+  // indicator, leaving a bare strip of webview background below the ad. A
+  // negative margin pushes the banner's bottom edge past the safe area, down
+  // to the physical screen edge. The exact push needed is the safe-area
+  // inset itself (0 on Home-button iPads — where the ad is already flush —
+  // up to ~20-34pt on Face ID iPads), read from the live CSS env() value
+  // rather than hardcoded, so this can't overshoot and clip the ad off
+  // devices where there's no inset to begin with.
+  function getSafeAreaInsetBottom() {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;bottom:0;left:0;width:0;border:0;margin:0;visibility:hidden;padding-bottom:env(safe-area-inset-bottom, 0px);';
+    document.body.appendChild(probe);
+    const inset = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+    probe.remove();
+    return inset;
+  }
+
+  // index.html's content-reserving formulas (.canvas/.zoomControls/
+  // .menuOverlay/.archiveOverlay padding) all add `--banner-h` AND their own
+  // separate env(safe-area-inset-bottom) on top of it, because with the old
+  // margin:0 banner those were two distinct strips (ad, then blank safe
+  // area below it). Now that the banner is pushed down to physically fill
+  // the safe-area strip too, that inset is no longer blank — it's the
+  // bottom slice of the ad. Reserving the ad's full on-screen height *plus*
+  // that same inset again would double-count it and open a gap above the ad
+  // instead of below it. Subtracting the inset here keeps --banner-h equal
+  // to just the portion of the ad that sits above the safe area, so
+  // `--banner-h + env(safe-area-inset-bottom)` in those formulas still adds
+  // up to the ad's true total height, gapless either side.
   function setBannerHeight(px) {
-    document.documentElement.style.setProperty('--banner-h', px + 'px');
+    const reserved = Math.max(0, px - getSafeAreaInsetBottom());
+    document.documentElement.style.setProperty('--banner-h', reserved + 'px');
   }
 
   async function init() {
@@ -64,7 +96,7 @@ window.PnbAdMob = (function () {
         adId,
         adSize: 'ADAPTIVE_BANNER',
         position: 'BOTTOM_CENTER',
-        margin: 0,
+        margin: -getSafeAreaInsetBottom(),
         isTesting: !!(window.PNB_CONFIG && window.PNB_CONFIG.ADMOB_TEST_MODE),
       });
     } catch (_e) {

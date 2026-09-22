@@ -16,6 +16,7 @@
   "archiveEmpty": "Ingen tidligere billeder endnu.",
   "backToMenuLabel": "Tilbage til menuen",
   "numbersToggleLabel": "Skjul tal på malede felter",
+  "progressToggleLabel": "Vis fremgangslinje",
   "puzzleNumberTitle": "Maleri #{{number}}",
   "topbarHint": "Vælg en farve, og tryk på felterne",
   "loading": "Indlæser…",

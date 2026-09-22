@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.DS_Store
 
 # Working/reference files dropped in ad hoc (design inspiration, one-off
 # scripts) — not part of the shipped app.
@@ -21,3 +22,5 @@ android/build/
 android/app/build/
 android/capacitor-cordova-android-plugins/build/
 android/local.properties
+
+debug/
