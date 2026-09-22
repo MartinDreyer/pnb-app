@@ -33,6 +33,14 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- AdMob (see admob.js / config.js ADMOB_APP_ID). This is the test App
+             ID — it must match config.js's ADMOB_APP_ID.android, and changing it
+             requires a native rebuild (not just editing config.js). Replace with
+             the real App ID from the AdMob console before release. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
     </application>
 
     <!-- Permissions -->

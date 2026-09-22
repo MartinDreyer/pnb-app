@@ -31,6 +31,7 @@
   "hintButtonLabel": "Use a hint",
   "hintButtonCount": "Hint ({{count}})",
   "hintButtonNone": "No hints left",
+  "hintButtonWatchAd": "Watch ad for more hints",
   "pickColorFirst": "Pick a color first",
   "colorAriaLabel": "Color {{num}}",
   "cheatAriaLabel": "Cheat: fill all remaining regions but one",

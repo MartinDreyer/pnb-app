@@ -10,6 +10,9 @@
       --target-w: 1620;
       --target-h: 2160;
       --topbar-h: 64px;
+      /* Height of the native AdMob banner (0 until one is actually shown and
+         reports its real size via admob.js's bannerAdSizeChanged listener). */
+      --banner-h: 0px;
       /* Floating palette height. Plain vh suffers the same iPad Safari/
          WKWebView bug described on .app below (keeps the pre-rotation
          value after a portrait<->landscape switch, understating the
@@ -120,7 +123,7 @@
       z-index: 0;
       padding-top: var(--topbar-h);
       /* Reserve space so the painting still fits in visible area */
-      padding-bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px));
+      padding-bottom: calc(var(--palette-h) + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px));
       box-sizing: border-box;
       overflow: hidden;
       display: grid;
@@ -249,7 +252,7 @@
       position: fixed;
       left: 0;
       right: 0;
-      bottom: 0;
+      bottom: var(--banner-h, 0px);
       height: var(--palette-h);
       z-index: 60;
     }
@@ -610,7 +613,7 @@
     .zoomControls {
       position: fixed;
       right: calc(12px + env(safe-area-inset-right, 0px));
-      bottom: calc(var(--palette-h) + env(safe-area-inset-bottom, 0px) + 14px);
+      bottom: calc(var(--palette-h) + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px) + 14px);
       z-index: 55;
       display: flex;
       flex-direction: column;
@@ -745,7 +748,7 @@
       z-index: 200;
       background: var(--bg);
       box-sizing: border-box;
-      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
       overflow-y: auto;
       display: none;
     }
@@ -978,7 +981,7 @@
       z-index: 210;
       background: var(--bg);
       box-sizing: border-box;
-      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
+      padding: calc(20px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) calc(20px + var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px)) calc(16px + env(safe-area-inset-left, 0px));
       overflow-y: auto;
       display: none;
     }
@@ -1060,12 +1063,24 @@
       cursor: not-allowed;
     }
 
+    /* Free hints exhausted: instead of looking disabled, invite a rewarded ad. */
+    .hintBtn.hintBtnWatchAd {
+      background: var(--accent);
+      color: #FFFFFF;
+      border-color: var(--accent);
+    }
+
+    /* ...except while an ad is actually loading (briefly disabled to block double-taps). */
+    .hintBtn.hintBtnWatchAd[disabled] {
+      opacity: 0.7;
+    }
+
     /* Completion trivia panel */
     .triviaPanel {
       position: fixed;
       left: 0;
       right: 0;
-      bottom: 0;
+      bottom: var(--banner-h, 0px);
       background: #FFFFFF;
       border-top: 1px solid var(--stroke);
       box-shadow: 0 -8px 28px rgba(0,0,0,0.18);
@@ -1262,6 +1277,7 @@
   </div>
 
   <script src="config.js"></script>
+  <script src="admob.js"></script>
   <script>
     // SUPABASE_URL / SUPABASE_ANON_KEY come from config.js (checked in for local dev,
     // swap per environment).
@@ -2531,16 +2547,26 @@
 
       // Hints: highlight and zoom to an unpainted region of the selected
       // color. Limited per puzzle so it stays a nudge, not an autosolve.
-      const HINT_LIMIT = 5;
+      const HINT_LIMIT = 3;
       let hintsRemaining = HINT_LIMIT;
       let hintTargets = { annotated: null };
+      // The region a hint last pointed to and hasn't been painted yet — re-hinting
+      // the same still-unpainted region (e.g. tapping the button repeatedly before
+      // actually painting it) re-shows it for free instead of burning another hint.
+      let lastHintedRegion = null;
       const hintBtn = document.getElementById('hintBtn');
 
       function updateHintBtnLabel() {
         if (!hintBtn) return;
-        hintBtn.textContent = hintsRemaining > 0 ? t('hintButtonCount', { count: hintsRemaining }) : t('hintButtonNone');
-        if (hintsRemaining <= 0) hintBtn.setAttribute('disabled', 'true');
-        else hintBtn.removeAttribute('disabled');
+        hintBtn.removeAttribute('disabled');
+        if (hintsRemaining > 0) {
+          hintBtn.textContent = t('hintButtonCount', { count: hintsRemaining });
+          hintBtn.classList.remove('hintBtnWatchAd');
+        } else {
+          // Instead of just disabling, offer a rewarded ad for more hints (see useHint).
+          hintBtn.textContent = t('hintButtonWatchAd');
+          hintBtn.classList.add('hintBtnWatchAd');
+        }
       }
 
       function pathLocalCenter(svg, path) {
@@ -2558,7 +2584,18 @@
       }
 
       function useHint() {
-        if (hintsRemaining <= 0 || !panzoomCtl || !hintTargets.annotated) return;
+        if (!panzoomCtl || !hintTargets.annotated) return;
+        if (hintsRemaining <= 0) {
+          hintBtn.setAttribute('disabled', 'true'); // prevent double-taps while the ad loads
+          PnbAdMob.showRewardedForHints(
+            () => {
+              hintsRemaining += (window.PNB_CONFIG && window.PNB_CONFIG.ADMOB_HINT_REWARD_COUNT) || 0;
+              updateHintBtnLabel();
+            },
+            () => { updateHintBtnLabel(); }
+          );
+          return;
+        }
         const selectedNum = paletteSelection.getSelectedNum();
         if (selectedNum == null) {
           const label = document.getElementById('selectedLabel');
@@ -2574,8 +2611,11 @@
         );
         if (!candidate) return;
 
-        hintsRemaining -= 1;
-        updateHintBtnLabel();
+        if (candidate !== lastHintedRegion) {
+          hintsRemaining -= 1;
+          updateHintBtnLabel();
+          lastHintedRegion = candidate;
+        }
 
         const { lx, ly } = pathLocalCenter(hintTargets.annotated, candidate);
         panzoomCtl.focusOnLocalPoint(lx, ly, Math.min(4, MAX_ZOOM));
@@ -2616,6 +2656,7 @@
 
         hintTargets.annotated = annotated;
         hintsRemaining = HINT_LIMIT;
+        lastHintedRegion = null;
         updateHintBtnLabel();
 
         // Completion tracking: count paintable regions once per load.
@@ -2650,7 +2691,14 @@
           markPathPainted(puzzle.puzzleId, Number(_path.dataset.pnbIndex));
           if (totalToPaint > 0 && paintedCount >= totalToPaint) {
             markPuzzleCompleted(puzzle.puzzleId);
-            revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
+            // Let the completion feel (final swatch fill animation) land before
+            // any ad interrupts it; PnbAdMob no-ops/calls back instantly in
+            // plain-browser dev or if no ad is available.
+            setTimeout(() => {
+              PnbAdMob.showInterstitial(() => {
+                revealOriginalInWrap(svgWrap, referenceImageUrl, puzzle);
+              });
+            }, 900);
           }
         }
 
@@ -2765,6 +2813,7 @@
 
     async function renderMenu() {
       document.getElementById('menuOverlay').classList.add('show');
+      PnbAdMob.showBanner();
 
       const todayStatusEl = document.getElementById('menuTodayStatus');
       const historyStripEl0 = document.getElementById('menuHistoryStrip');
@@ -2829,6 +2878,7 @@
 
     async function openArchive() {
       document.getElementById('archiveOverlay').classList.add('show');
+      PnbAdMob.showBanner();
       if (!archiveRows) {
         const grid = document.getElementById('archiveGrid');
         grid.textContent = t('loading');
@@ -2970,6 +3020,7 @@
       pnbMark('pnb:boot-start');
       hideNativeSplash();
       wireViewportSizeSync();
+      PnbAdMob.init();
 
       // The animated splash is a first-impression/branding moment, not a generic
       // "please wait" spinner — it should only play once per app session (native
@@ -2998,6 +3049,7 @@
         }
         wireHomeButton();
         wireNumbersToggle();
+        PnbAdMob.showBanner();
         const puzzle = requested === 'today' ? await fetchActivePuzzle() : await fetchPuzzleById(requested);
         pnbMark('pnb:puzzle-fetched');
         fetchPuzzleNumber(puzzle.puzzleId).then(setPuzzleTitle).catch(() => {});

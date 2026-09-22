@@ -20,10 +20,37 @@
 // stack. Set ENV: 'production' for real deployments so a failure instead
 // shows a short, translated "something went wrong" popup with an error code,
 // with no technical detail or URLs exposed to end users.
+//
+// AdMob: ad unit IDs and app IDs for the banner/interstitial/rewarded ads
+// (see admob.js). ADMOB_TEST_MODE true uses Google's public test ad unit IDs
+// below (always safe to ship/commit — they never earn revenue and always
+// fill), so the ad flows are fully exercised in dev/TestFlight without a live
+// AdMob account. Flip to false and replace ADMOB_APP_ID/ADMOB_AD_UNITS with
+// real ones from the AdMob console once the app is ready for release — ad
+// unit IDs aren't secrets (only useful paired with app ownership), safe to
+// commit like SUPABASE_ANON_KEY. Note ADMOB_APP_ID here is used at JS-init
+// time only; the native SDK also reads its own compiled-in copy from
+// ios/App/App/Info.plist / android/app/src/main/AndroidManifest.xml, which
+// needs a native rebuild (not just this file) to change.
 window.PNB_CONFIG = {
   SUPABASE_URL: 'http://MacBook-Pro.local:54331',
   SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0',
   // LANG: 'en',
   ENV: 'development',
   // ENV: 'production',
+  ADMOB_TEST_MODE: true,
+  ADMOB_APP_ID: {
+    ios: 'ca-app-pub-3940256099942544~1458002511',
+    android: 'ca-app-pub-3940256099942544~3347511713',
+  },
+  ADMOB_AD_UNITS: {
+    banner: { ios: 'ca-app-pub-3940256099942544/2934735716', android: 'ca-app-pub-3940256099942544/6300978111' },
+    interstitial: { ios: 'ca-app-pub-3940256099942544/4411468910', android: 'ca-app-pub-3940256099942544/1033173712' },
+    rewarded: { ios: 'ca-app-pub-3940256099942544/1712485313', android: 'ca-app-pub-3940256099942544/5224354917' },
+  },
+  // Real IDs (swap in before release — ADMOB_APP_ID also requires a native rebuild):
+  // ADMOB_TEST_MODE: false,
+  // ADMOB_APP_ID: { ios: 'ca-app-pub-XXXX~YYYY', android: 'ca-app-pub-XXXX~ZZZZ' },
+  // ADMOB_AD_UNITS: { banner: {...}, interstitial: {...}, rewarded: {...} },
+  ADMOB_HINT_REWARD_COUNT: 3, // bonus hints granted per rewarded-ad view
 };

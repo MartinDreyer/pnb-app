@@ -31,6 +31,7 @@
   "hintButtonLabel": "Brug et hint",
   "hintButtonCount": "Hint ({{count}})",
   "hintButtonNone": "Ingen hints tilbage",
+  "hintButtonWatchAd": "Se en reklame for flere hints",
   "pickColorFirst": "Vælg en farve først",
   "colorAriaLabel": "Farve {{num}}",
   "cheatAriaLabel": "Snyd: udfyld alle resterende felter, undtagen ét",

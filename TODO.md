@@ -70,3 +70,9 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Update the cheat swatch's label to "Udfyld (næsten) alt" and adjust its CSS so the longer text fits
 - [x] Show the puzzle's serial number in the topbar (e.g. "Maleri #4") so reopening an old puzzle from the menu/Archive makes clear which one is open
 - [x] Remove the stale "guess the painting" wording from the topbar hint text; remove the two outdated guessing-related backlog ideas
+
+## Done (2026-09-22)
+
+- [x] Integrate `@capacitor-community/admob`: native banner ad + layout reserved for it (`--banner-h`), rewarded ad to grant extra hints once the free limit is used up
+- [x] Drop the free hint limit from 5 to 3, now that rewarded-ad top-ups exist; add a "watch an ad" affordance in place of just disabling the hint button
+- [x] Avoid burning a hint/ad view when re-tapping the hint button on a still-unpainted region it already pointed to
