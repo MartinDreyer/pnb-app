@@ -57,5 +57,11 @@
   "errorLoadPuzzleFailed": "Kunne ikke indlæse aktivt billede ({{status}})",
   "errorLoadSvgFailed": "Kunne ikke indlæse SVG ({{status}}): {{url}}",
   "errorGenericProduction": "Vi beklager, der opstod en fejl. {{code}}",
-  "errorPopupCloseLabel": "OK"
+  "errorPopupCloseLabel": "OK",
+  "offlineTitle": "Ingen internetforbindelse",
+  "offlineMessage": "Mindfill kræver internetforbindelse for at hente nye billeder.",
+  "offlineMessageWithDownload": "Mindfill kræver internetforbindelse for at hente nye billeder. Du kan stadig åbne et billede, du har downloadet tidligere.",
+  "offlineUseDownloadedButton": "Åbn downloadet billede",
+  "offlineQuitButton": "Afslut",
+  "offlineTryAgainLink": "Prøv igen"
 }

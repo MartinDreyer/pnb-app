@@ -350,6 +350,22 @@
       opacity: 1;
     }
 
+    /* Stand-in for .finalImage while the full-resolution reveal photo is
+       still loading — same reasoning as buildSkeletonHistoryCard: claim the
+       real footprint up front instead of popping in at full size once the
+       image decodes, which is what caused the reveal to visibly jump.
+       --reveal-ar is set from the puzzle's own SVG viewBox (see
+       revealOriginalInWrap) so the reserved box is the actual aspect ratio,
+       not a generic guess. */
+    .finalImageGhost {
+      width: min(90vw, 480px);
+      height: auto;
+      max-height: 55vh;
+      aspect-ratio: var(--reveal-ar, 4 / 3);
+      border-width: 12px;
+      box-sizing: border-box;
+    }
+
     #pnb-svg path {
       cursor: pointer;
       transition: fill 60ms linear;
@@ -457,9 +473,16 @@
 
     .swatches {
       display: grid;
-      grid-auto-flow: column;
-      grid-template-rows: repeat(2, 84px);
-      grid-auto-columns: 84px;
+      /* Row-major fill (1,2,3,4… across the top row, then continuing on the
+         second) instead of grid's default column-major fill (which packs
+         1,3,5… down the left column then 2,4,6… down the next, reading as
+         an odd/even split rather than in order) — needs an explicit column
+         count for a 2-row grid to actually wrap after that many items
+         instead of putting everything in one row; --swatch-cols is set by
+         buildSwatches from the actual number of colors (+ the cheat tile). */
+      grid-auto-flow: row;
+      grid-template-columns: repeat(var(--swatch-cols, 1), 84px);
+      grid-auto-rows: 84px;
       gap: 10px;
       overflow-x: auto;
       overflow-y: hidden;
@@ -727,6 +750,91 @@
       font-size: 14px;
       padding: 10px 20px;
       cursor: pointer;
+    }
+
+    /* Blocking "no internet" screen — see showOfflineOverlay. Shares the
+       .prodErrorOverlay box layout but needs its own actions (quit / open
+       a previously-downloaded painting), so it's a separate overlay rather
+       than reusing that one's single-button markup. */
+    .offlineOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.5);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .offlineOverlay.show {
+      display: flex;
+    }
+
+    .offlineBox {
+      background: #fff;
+      color: #1a1a1a;
+      border-radius: 12px;
+      padding: 24px 20px;
+      max-width: 340px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .offlineIcon {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    .offlineTitle {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .offlineMessage {
+      font-size: 14px;
+      line-height: 1.45;
+      color: #555;
+      margin-bottom: 18px;
+    }
+
+    .offlineActions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .offlineUseDownloadedBtn,
+    .offlineQuitBtn {
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      padding: 11px 20px;
+      cursor: pointer;
+    }
+
+    .offlineUseDownloadedBtn {
+      background: #1a1a1a;
+      color: #fff;
+    }
+
+    .offlineQuitBtn {
+      background: #eee;
+      color: #1a1a1a;
+    }
+
+    .offlineTryAgainLink {
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 13px;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 4px;
+      margin-top: 2px;
     }
 
     /* Zoom affordance: one-time animated hint + persistent controls */
@@ -1162,6 +1270,19 @@
     .menuBrandSwatch:nth-child(3) { bottom: 0; left: 0; background-color: #8a6a4f; transform: rotate(12deg); }
     .menuBrandSwatch:nth-child(4) { bottom: 0; right: 0; background-color: #3a3a3a; transform: rotate(-10deg); }
 
+    /* transform: translateZ(0) on .menuTitle/.museumFrame/.menuArchiveBtn
+       below: forces each onto its own compositor layer. Without it, WKWebView
+       on iOS (confirmed on both Simulator and a real iPad) sometimes lays
+       these out with completely correct size/position/background/text/
+       opacity — verified live via getBoundingClientRect/getComputedStyle,
+       and via Safari Web Inspector showing no console errors at all — but
+       never actually paints them; toggling a forced layer on the live
+       element in the Inspector made them appear instantly with no other
+       change. This is a WebKit compositing bug, not an app logic bug, so
+       there's nothing to fix in JS/data here — this dummy transform is the
+       workaround. Cheap and inert (no visible offset) but must stay on
+       every element that was seen going unpainted; if a new museum-framed
+       element starts silently not rendering, this is why. */
     .menuTitle {
       font-family: Didot, 'Bodoni MT', 'Playfair Display', Georgia, serif;
       font-size: 24px;
@@ -1171,48 +1292,30 @@
       color: #e8c877;
       text-shadow: 0 2px 8px rgba(0,0,0,0.5);
       margin: 0;
+      transform: translateZ(0);
     }
 
     /* Museum gallery-wall frame utility, shared by the home menu, archive
        and completion-reveal screens. Two real-photo attempts (a plain
        border-image sprite, then one with corrected rotation-based corner/
        edge pairing) still didn't read as a convincing moulded frame at
-       arbitrary sizes, so per a reference photo of an actual gold frame,
-       this is now CSS-painted instead: a conic-gradient border-image with
-       FOUR repeats of shadow→base→highlight→base→shadow per full turn
-       (one per side) rather than one gradual sweep around the whole box.
-       Since a conic-gradient's stops are placed by angle from the box's
-       center, repeating the ramp every 90° puts a highlight at the
-       midpoint of every side alike and a shadow dip at every corner (where
-       two sides' ramps meet) — exactly the "bright rounded bulge down the
-       centre of each side, dark mitred seam at each corner" look of a real
-       moulding profile, with no separate corner asset needed. A thin dark
-       trim ring (box-shadow, not border-image, so it doesn't consume
-       another slice) front and back of the bevel completes the moulding
-       "steps". Each numbered variant is a different gold palette. */
+       arbitrary sizes, so this was briefly CSS-painted via a conic-gradient
+       border-image (16 color stops, 4 repeats) instead. `border-style: ridge`
+       gets the same "moulded, lit-from-one-side" bevel read from a single
+       border-color with no gradient and no border-image at all — kept as
+       the simpler/cheaper option even though the conic-gradient itself
+       turned out not to be the cause of the unpainted-layer bug (see the
+       transform: translateZ(0) comment on .menuTitle above — same bug hit
+       plain solid-color elements too). A thin dark trim ring (box-shadow,
+       so it doesn't consume a border slice) front and back of the bevel
+       completes the moulding "steps". Each numbered variant is a different
+       gold palette. */
     .museumFrame {
       box-sizing: border-box;
-      border-style: solid;
       border-width: 8px;
-      border-image-slice: 1;
-      border-image-source: conic-gradient(from 0deg,
-        var(--frame-hi, #f3d78a) 0deg,
-        var(--frame-base, #c99a3f) 35deg,
-        var(--frame-shadow, #6b4515) 42.5deg,
-        var(--frame-base, #c99a3f) 50deg,
-        var(--frame-hi, #f3d78a) 90deg,
-        var(--frame-base, #c99a3f) 125deg,
-        var(--frame-shadow, #6b4515) 132.5deg,
-        var(--frame-base, #c99a3f) 140deg,
-        var(--frame-hi, #f3d78a) 180deg,
-        var(--frame-base, #c99a3f) 215deg,
-        var(--frame-shadow, #6b4515) 222.5deg,
-        var(--frame-base, #c99a3f) 230deg,
-        var(--frame-hi, #f3d78a) 270deg,
-        var(--frame-base, #c99a3f) 305deg,
-        var(--frame-shadow, #6b4515) 312.5deg,
-        var(--frame-base, #c99a3f) 320deg,
-        var(--frame-hi, #f3d78a) 360deg);
+      border-style: ridge;
+      border-color: var(--frame-base, #c99a3f);
+      transform: translateZ(0);
       box-shadow:
         0 0 0 2px var(--frame-trim, #3c2508),
         inset 0 0 0 2px var(--frame-trim, #3c2508),
@@ -1349,6 +1452,21 @@
       background: #faf3df !important;
     }
 
+    /* Not-yet-started puzzle: a plain primed canvas isn't quite right either
+       — it reads as empty/missing rather than "waiting to be painted". This
+       is a static, inline sketch of a generic paint-by-numbers canvas (a
+       few outlined regions with number labels) rather than the puzzle's own
+       artwork — same reasoning as setMenuThumb's comment on why the real
+       reference image is never fetched just for a thumbnail, but here there
+       isn't even a real puzzle-specific image to show yet. Pure CSS/inline
+       SVG, no network request. */
+    .menuThumbUnpainted {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect x='6' y='6' width='108' height='108' rx='4' fill='none' stroke='%23b8ac8f' stroke-width='2'/%3E%3Cpath d='M6,45 C30,30 50,55 75,40 C90,32 105,42 114,38' fill='none' stroke='%23b8ac8f' stroke-width='1.3'/%3E%3Cpath d='M20,6 C35,40 25,70 45,90 C55,100 40,114 30,114' fill='none' stroke='%23b8ac8f' stroke-width='1.3'/%3E%3Cpath d='M60,6 C75,25 65,55 90,65 C105,71 95,95 114,100' fill='none' stroke='%23b8ac8f' stroke-width='1.3'/%3E%3Cpath d='M6,85 C25,80 45,95 70,88 C85,84 100,95 114,90' fill='none' stroke='%23b8ac8f' stroke-width='1.3'/%3E%3Ctext x='16' y='33' font-family='sans-serif' font-size='11' fill='%23b8ac8f'%3E3%3C/text%3E%3Ctext x='56' y='63' font-family='sans-serif' font-size='11' fill='%23b8ac8f'%3E7%3C/text%3E%3Ctext x='83' y='103' font-family='sans-serif' font-size='11' fill='%23b8ac8f'%3E2%3C/text%3E%3Ctext x='28' y='108' font-family='sans-serif' font-size='11' fill='%23b8ac8f'%3E5%3C/text%3E%3C/svg%3E") !important;
+      background-size: 60% !important;
+      background-repeat: no-repeat !important;
+      background-position: center !important;
+    }
+
     /* Today's active puzzle: the one thumbnail that shows the painting at
        its own real shape rather than square — sized as large as it can be
        without either dimension taking over the screen. width:100% (up to
@@ -1365,6 +1483,9 @@
       max-height: 50dvh;
       aspect-ratio: var(--hero-ar, 4 / 3);
       border-width: 10px;
+      /* Same floor as .menuHistoryItem .menuThumb, same reason. */
+      min-width: 160px;
+      min-height: 120px;
     }
 
     .menuTodayHeading {
@@ -1470,6 +1591,12 @@
       width: 100%;
       aspect-ratio: 1;
       height: auto;
+      /* Floor so a width:100%/aspect-ratio box can't collapse to literally
+         nothing if it's ever computed against a bad/stale container width
+         (see wireViewportSizeSync) — a visibly-too-small frame is a much
+         better failure mode than an invisible, unclickable one. */
+      min-width: 60px;
+      min-height: 60px;
       font-size: 20px;
       color: #b8ac8f;
       box-sizing: border-box;
@@ -1569,6 +1696,8 @@
       color: var(--text);
       cursor: pointer;
       touch-action: manipulation;
+      /* See the transform: translateZ(0) comment on .menuTitle. */
+      transform: translateZ(0);
     }
 
     .menuArchiveBtn:active {
@@ -1849,6 +1978,18 @@
         <button class="prodErrorClose" id="prodErrorClose" type="button" data-i18n="errorPopupCloseLabel"></button>
       </div>
     </div>
+    <div class="offlineOverlay" id="offlineOverlay">
+      <div class="offlineBox">
+        <div class="offlineIcon" aria-hidden="true">📡</div>
+        <div class="offlineTitle" data-i18n="offlineTitle"></div>
+        <div class="offlineMessage" id="offlineMessageText"></div>
+        <div class="offlineActions">
+          <button class="offlineUseDownloadedBtn" id="offlineUseDownloadedBtn" type="button" data-i18n="offlineUseDownloadedButton" hidden></button>
+          <button class="offlineQuitBtn" id="offlineQuitBtn" type="button" data-i18n="offlineQuitButton"></button>
+          <button class="offlineTryAgainLink" id="offlineTryAgainBtn" type="button" data-i18n="offlineTryAgainLink"></button>
+        </div>
+      </div>
+    </div>
     <div class="splashOverlay" id="splashOverlay">
       <div class="splashMark">
         <div class="splashSwatch"></div>
@@ -2021,6 +2162,23 @@
     // or orientation change (see the comment on .app). Listens on resize,
     // orientationchange, and visualViewport's resize (fires slightly ahead
     // of window resize on iOS and catches on-screen-keyboard changes too).
+    //
+    // Returns a promise that resolves once the first "definitely settled"
+    // correction pass has run. This used to be fire-and-forget — boot()
+    // called it and moved straight on to fetching/rendering. That raced
+    // against exactly the bug this function exists to fix: the width-
+    // dependent layout further down (the archive/history grid's
+    // auto-fill columns, and — since this session's square-thumbnail
+    // rework — every thumbnail's own aspect-ratio-derived size) got built
+    // using window.innerWidth/--app-vw's still-stale post-reload value
+    // whenever the puzzle metadata fetch resolved faster than the
+    // double-rAF correction below (very possible against a local/fast
+    // Supabase, i.e. exactly a dev/QA setup), and unlike a plain wrong
+    // column count, an aspect-ratio box sized off a bad width can end up
+    // rendered at literally zero size — which is what the "thumbnails and
+    // even a plain static heading go missing after navigating back" bug
+    // turned out to be. Awaiting this in boot() before fetching/rendering
+    // anything closes that race instead of leaving it to chance.
     function wireViewportSizeSync() {
       const sync = () => {
         document.documentElement.style.setProperty('--app-vh', `${window.innerHeight * 0.01}px`);
@@ -2037,9 +2195,15 @@
       // A ResizeObserver on <html> catches WKWebView's own delayed internal
       // relayout directly (a real box-size change), which those events
       // don't; two rAFs is a standard "wait until layout has definitely
-      // settled" fallback for the same gap. Both call the same idempotent
-      // sync(), so doing this more than strictly necessary is harmless.
-      requestAnimationFrame(() => requestAnimationFrame(sync));
+      // settled" fallback for the same gap. All of these call the same
+      // idempotent sync(), so doing this more than strictly necessary is
+      // harmless.
+      const settled = new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          sync();
+          resolve();
+        }));
+      });
       if (typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(sync).observe(document.documentElement);
       }
@@ -2048,6 +2212,12 @@
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', sync);
       }
+      // A further best-effort catch-all beyond the double-rAF await below,
+      // for whatever's left of this same class of delay that two frames
+      // still doesn't cover — not awaited (boot() shouldn't stall this
+      // long on the common case), same idempotent sync().
+      setTimeout(sync, 350);
+      return settled;
     }
 
     function wireTopbarHeightSync() {
@@ -2114,6 +2284,97 @@
       closeBtn.addEventListener('click', () => overlay.classList.remove('show'));
     }
 
+    // localStorage key for the map of puzzles the user has explicitly chosen
+    // to download for offline use — { [puzzleId]: { downloadedAt } }. Nothing
+    // currently writes to this (the download-for-offline-play feature is on
+    // hold, see TODO.md); left in place since the offline overlay below still
+    // reads it to decide whether to offer reopening a downloaded puzzle.
+    // Separate from the opportunistic pnb_cache_* keys written just by opening
+    // a puzzle: those keep whatever was last *seen*, this tracks what was
+    // deliberately saved for offline use.
+    const DOWNLOADED_PUZZLES_KEY = 'pnb_cache_downloaded_puzzles';
+
+    // Picks a puzzle to offer via the offline overlay's "open downloaded
+    // painting" button: the most recently explicitly-downloaded one if any,
+    // else falls back to any puzzle this device happens to still have cached
+    // metadata for (opportunistic cache from a previous online visit — see
+    // fetchActivePuzzle/fetchPuzzleById), else 'today' if that's cached.
+    // Returns null if there's truly nothing offline to show.
+    function findOfflinePuzzleId() {
+      const downloaded = readJsonCache(DOWNLOADED_PUZZLES_KEY) || {};
+      const ids = Object.keys(downloaded);
+      if (ids.length) {
+        ids.sort((a, b) => (downloaded[b].downloadedAt || 0) - (downloaded[a].downloadedAt || 0));
+        return ids[0];
+      }
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.indexOf('pnb_cache_puzzle_') === 0) {
+            return key.slice('pnb_cache_puzzle_'.length);
+          }
+        }
+      } catch (_e) { /* ignore */ }
+      if (readJsonCache('pnb_cache_active_puzzle')) return 'today';
+      return null;
+    }
+
+    // A network-shaped failure (as opposed to e.g. a genuine "no puzzle is
+    // scheduled right now" business error) — used to decide whether boot()'s
+    // catch should show the dedicated offline screen instead of the generic
+    // error paths. supabaseSelect/loadSvg tag their thrown errors with these
+    // codes specifically when the underlying fetch itself failed/timed out.
+    function isNetworkFailure(err) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+      const code = err && err.code;
+      return code === 'SUPABASE_REQUEST_FAILED' || code === 'SVG_REQUEST_FAILED';
+    }
+
+    // Blocking "no internet" screen, shown instead of the generic error
+    // paths when boot() fails in a way that looks like lost connectivity —
+    // see isNetworkFailure. Offers exactly what's actually possible offline:
+    // reopening a painting already saved on this device (if any), or quitting.
+    function showOfflineOverlay() {
+      hideNativeSplash();
+      const splashEl = document.getElementById('splashOverlay');
+      if (splashEl) splashEl.style.display = 'none';
+      const overlay = document.getElementById('offlineOverlay');
+      if (!overlay) return;
+      const offlinePuzzleId = findOfflinePuzzleId();
+      const messageEl = document.getElementById('offlineMessageText');
+      if (messageEl) messageEl.textContent = t(offlinePuzzleId ? 'offlineMessageWithDownload' : 'offlineMessage');
+      const useDownloadedBtn = document.getElementById('offlineUseDownloadedBtn');
+      if (useDownloadedBtn) {
+        useDownloadedBtn.hidden = !offlinePuzzleId;
+        useDownloadedBtn.onclick = () => goToPuzzle(offlinePuzzleId);
+      }
+      overlay.classList.add('show');
+    }
+
+    // Best-effort app exit — there's no @capacitor/app plugin in this project
+    // (see admob.js's guard pattern, mirrored here), so on native this is a
+    // no-op unless/until that plugin is added; on web, window.close() only
+    // works for windows script-opened, so it commonly no-ops too. Either way
+    // it degrades safely: worst case the button does nothing and the user
+    // backgrounds/closes the app themselves.
+    function quitApp() {
+      try {
+        const AppPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+        if (AppPlugin && typeof AppPlugin.exitApp === 'function') {
+          AppPlugin.exitApp();
+          return;
+        }
+      } catch (_e) { /* ignore */ }
+      try { window.close(); } catch (_e) { /* ignore */ }
+    }
+
+    function wireOfflineOverlay() {
+      const quitBtn = document.getElementById('offlineQuitBtn');
+      if (quitBtn) quitBtn.addEventListener('click', quitApp);
+      const tryAgainBtn = document.getElementById('offlineTryAgainBtn');
+      if (tryAgainBtn) tryAgainBtn.addEventListener('click', () => location.reload());
+    }
+
     // fetch() has no built-in timeout — against an unreachable host (e.g. a
     // stale LAN IP in config.js after switching networks) it can hang far
     // longer than a user will wait, which reads as "stuck on the splash
@@ -2168,6 +2429,12 @@
         palette: puzzlesRow.palette, // [{num, rgb: [r,g,b]}, ...] — same shape the UI already expects
         svgUrl: storagePublicUrl(puzzlesRow.svg_storage_path),
         referenceImageUrl: storagePublicUrl(puzzlesRow.reference_png_storage_path),
+        // CSS aspect-ratio value, e.g. "3780 / 2888" — see pnb-database's
+        // puzzle_reference_dimensions migration. null on puzzles published
+        // before that column existed (reference_width/height are 0), so a
+        // loading/reveal placeholder falls back to a generic guess instead
+        // (see .finalImageGhost/#menuTodayThumb's CSS var default).
+        referenceAspectRatio: puzzlesRow.reference_width ? `${puzzlesRow.reference_width} / ${puzzlesRow.reference_height}` : null,
         title: puzzlesRow.paintings ? puzzlesRow.paintings.title : '',
         artist: puzzlesRow.paintings ? puzzlesRow.paintings.artist : '',
         smkObjectNumber: puzzlesRow.paintings ? puzzlesRow.paintings.smk_object_number : '',
@@ -2179,32 +2446,121 @@
       };
     }
 
-    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,paintings(title,artist,smk_object_number,ai_summary)';
+    const PUZZLE_FIELDS = 'id,palette,svg_storage_path,reference_png_storage_path,reference_width,reference_height,paintings(title,artist,smk_object_number,ai_summary)';
+
+    // --- Offline fallback cache -------------------------------------------
+    // The app is otherwise fully dependent on pnb-database being reachable —
+    // no network (airplane mode, DB down) previously meant a hard failure on
+    // every boot, even to reopen a puzzle already painted on this device.
+    // These helpers persist the last-known-good data locally so a boot with
+    // no network degrades to "whatever we last saw", not an error screen.
+    // localStorage for small JSON (puzzle rows, the history list); the
+    // Cache Storage API for actual asset bytes (SVGs, reference images) —
+    // both are best-effort (try/catch) since private browsing or a full
+    // storage quota shouldn't turn a cache write into a hard failure.
+    function readJsonCache(key) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    function writeJsonCache(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (_e) { /* ignore (e.g. private browsing, quota) */ }
+    }
+
+    function readTextCache(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    function writeTextCache(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch (_e) { /* ignore (e.g. private browsing, quota) */ }
+    }
+
+    const OFFLINE_ASSET_CACHE = 'pnb-offline-assets-v1';
+
+    async function openAssetCache() {
+      try {
+        if (!('caches' in window)) return null;
+        return await caches.open(OFFLINE_ASSET_CACHE);
+      } catch (_e) {
+        return null;
+      }
+    }
+
+    // Fetches `url` and, on success, stashes a copy in the Cache Storage
+    // API for later; on network failure, falls back to that stashed copy
+    // (if any) instead of throwing. Used for assets (SVGs, images) that
+    // need their actual bytes available offline, not just metadata.
+    async function fetchWithAssetCache(url, timeoutMs, label) {
+      const cache = await openAssetCache();
+      try {
+        const res = await fetchWithTimeout(url, { cache: 'no-cache' }, timeoutMs, label);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (cache) cache.put(url, res.clone()).catch(() => {});
+        return res;
+      } catch (err) {
+        const cached = cache ? await cache.match(url).catch(() => null) : null;
+        if (cached) return cached;
+        throw err;
+      }
+    }
 
     // The "current puzzle" is whichever rotation_schedule row's active_from/active_until
     // window contains right now (see pnb-database's schema docs). RLS on the anon key
-    // only ever exposes published puzzles.
+    // only ever exposes published puzzles. Falls back to the last successfully
+    // fetched active puzzle (see the offline cache above) if the network is
+    // down — meaning a puzzle published while offline just won't show up
+    // until the next successful fetch, exactly like a normal sync gap.
     async function fetchActivePuzzle() {
-      const nowIso = new Date().toISOString();
-      const rows = await supabaseSelect('rotation_schedule', {
-        select: `id,active_from,active_until,puzzles(${PUZZLE_FIELDS})`,
-        active_from: `lte.${nowIso}`,
-        active_until: `gte.${nowIso}`,
-        order: 'active_from.desc',
-        limit: '1',
-      });
-      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'NO_ACTIVE_PUZZLE' });
-      return mapPuzzleRow(rows[0].puzzles);
+      const cacheKey = 'pnb_cache_active_puzzle';
+      try {
+        const nowIso = new Date().toISOString();
+        const rows = await supabaseSelect('rotation_schedule', {
+          select: `id,active_from,active_until,puzzles(${PUZZLE_FIELDS})`,
+          active_from: `lte.${nowIso}`,
+          active_until: `gte.${nowIso}`,
+          order: 'active_from.desc',
+          limit: '1',
+        });
+        if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'NO_ACTIVE_PUZZLE' });
+        const puzzle = mapPuzzleRow(rows[0].puzzles);
+        writeJsonCache(cacheKey, puzzle);
+        return puzzle;
+      } catch (err) {
+        const cached = readJsonCache(cacheKey);
+        if (cached) return cached;
+        throw err;
+      }
     }
 
     async function fetchPuzzleById(puzzleId) {
-      const rows = await supabaseSelect('puzzles', {
-        select: PUZZLE_FIELDS,
-        id: `eq.${puzzleId}`,
-        limit: '1',
-      });
-      if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'PUZZLE_NOT_FOUND' });
-      return mapPuzzleRow(rows[0]);
+      const cacheKey = `pnb_cache_puzzle_${puzzleId}`;
+      try {
+        const rows = await supabaseSelect('puzzles', {
+          select: PUZZLE_FIELDS,
+          id: `eq.${puzzleId}`,
+          limit: '1',
+        });
+        if (!rows.length) throw Object.assign(new Error(t('errorNoActivePuzzle')), { code: 'PUZZLE_NOT_FOUND' });
+        const puzzle = mapPuzzleRow(rows[0]);
+        writeJsonCache(cacheKey, puzzle);
+        return puzzle;
+      } catch (err) {
+        const cached = readJsonCache(cacheKey);
+        if (cached) return cached;
+        throw err;
+      }
     }
 
     // A puzzle's number (its 1-based position in the full rotation schedule,
@@ -2244,20 +2600,44 @@
     // end every week — it's computed from position, not stored, so this always
     // fetches the full schedule (including not-yet-active future rows, which
     // are then filtered out below) rather than just the "limit" requested.
+    // Falls back to the last successfully fetched list (see the offline
+    // cache above) if the network is down, same as fetchActivePuzzle — the
+    // archive/history strip still shows whatever was last synced instead of
+    // going empty.
     async function fetchNumberedPuzzleHistory() {
-      const rows = await supabaseSelect('rotation_schedule', {
-        select: 'id,active_until,puzzles(id,reference_png_storage_path)',
-        order: 'active_from.asc',
-        limit: '1000',
-      });
-      const nowIso = new Date().toISOString();
-      const numbered = rows.map((row, i) => ({
-        puzzleId: row.puzzles.id,
-        number: i + 1,
-        activeUntil: row.active_until,
-        referenceImageUrl: storagePublicUrl(row.puzzles.reference_png_storage_path),
-      }));
-      return numbered.filter((row) => row.activeUntil <= nowIso).reverse();
+      const cacheKey = 'pnb_cache_history';
+      try {
+        const rows = await supabaseSelect('rotation_schedule', {
+          select: 'id,active_until,puzzles(id,reference_png_storage_path,reference_thumbnail_storage_path)',
+          order: 'active_from.asc',
+          limit: '1000',
+        });
+        const nowIso = new Date().toISOString();
+        const numbered = rows.map((row, i) => ({
+          puzzleId: row.puzzles.id,
+          number: i + 1,
+          activeUntil: row.active_until,
+          // Grid/strip tiles only need a small preview — see setMenuThumb's comment on
+          // why the full reference photo (~19MB) is deliberately avoided here. No
+          // fallback to reference_png_storage_path when the thumbnail hasn't been
+          // generated yet (empty string, not null, is what an ungenerated column
+          // currently holds — see pnb-database): falling back silently defeats the
+          // whole point of this column and was confirmed to reproduce the exact
+          // real-device rendering crash this comment warns about, multiplied by
+          // every history/archive item on screen at once. setMenuThumb treats a
+          // missing URL as "no preview yet" rather than fetching the original.
+          referenceImageUrl: row.puzzles.reference_thumbnail_storage_path
+            ? storagePublicUrl(row.puzzles.reference_thumbnail_storage_path)
+            : null,
+        }));
+        const result = numbered.filter((row) => row.activeUntil <= nowIso).reverse();
+        writeJsonCache(cacheKey, result);
+        return result;
+      } catch (err) {
+        const cached = readJsonCache(cacheKey);
+        if (cached) return cached;
+        throw err;
+      }
     }
 
     // The menu's history strip: on a narrow phone screen this is one
@@ -2381,19 +2761,30 @@
     }
 
     async function loadSvg(url) {
-      let res;
+      // See fetchWithAssetCache: falls back to a Cache Storage copy from a
+      // previous successful load if the network request fails, so a puzzle
+      // already opened once keeps working with no network. Also mirrors the
+      // (small, plain-text) SVG into localStorage as a second fallback layer
+      // — belt-and-suspenders in case Cache Storage itself isn't available
+      // in a given WebView/browsing context (private mode, an older engine,
+      // a webview origin that doesn't count as a secure context, etc.),
+      // since this is the one asset offline painting actually depends on.
+      const textCacheKey = `pnb_cache_svg_text_${url}`;
+      let txt;
       try {
-        res = await fetchWithTimeout(url, { cache: 'no-cache' }, 15000, url);
+        const res = await fetchWithAssetCache(url, 15000, url);
+        txt = await res.text();
+        writeTextCache(textCacheKey, txt);
       } catch (err) {
-        showDebugBanner(`SVG request failed:\n${url}\n\n${err.message || err}`);
-        err.code = err.code || 'SVG_REQUEST_FAILED';
-        throw err;
+        const cachedTxt = readTextCache(textCacheKey);
+        if (cachedTxt) {
+          txt = cachedTxt;
+        } else {
+          showDebugBanner(`SVG request failed:\n${url}\n\n${err.message || err}`);
+          err.code = err.code || 'SVG_REQUEST_FAILED';
+          throw err;
+        }
       }
-      if (!res.ok) {
-        showDebugBanner(`SVG request returned HTTP ${res.status}:\n${url}`);
-        throw Object.assign(new Error(t('errorLoadSvgFailed', { status: res.status, url })), { code: 'LOAD_SVG_FAILED' });
-      }
-      const txt = await res.text();
       const parser = new DOMParser();
       const doc = parser.parseFromString(txt, 'image/svg+xml');
       const svg = doc.documentElement;
@@ -2786,6 +3177,10 @@
     function buildSwatches(palette) {
       const swatches = document.getElementById('swatches');
       swatches.innerHTML = '';
+      // +1 for the cheat tile always appended after the real colors below —
+      // see .swatches' comment on why an explicit column count is needed at
+      // all for row-major (1,2,3…) instead of column-major (1,3,5…) fill.
+      swatches.style.setProperty('--swatch-cols', String(Math.ceil((palette.length + 1) / 2)));
       const counterByNum = new Map();
       for (const c of palette) {
         const el = document.createElement('div');
@@ -3163,20 +3558,55 @@
       const topbarEl = document.querySelector('.topbar');
       if (topbarEl) topbarEl.style.display = 'none';
 
+      // Ghost claims the reveal image's real footprint immediately, sized
+      // off reference_width/height (see mapPuzzleRow/puzzle_reference_dimensions
+      // migration) — known up front, unlike probing the SVG we were just
+      // painting: that only exists when this session actually loaded/painted
+      // the interactive puzzle first, not when reopening an already-completed
+      // one straight from the menu/archive, which is the more common path
+      // here. Falls back to a generic guess only for puzzles published
+      // before that column existed (referenceAspectRatio null).
+      const ghost = document.createElement('div');
+      ghost.className = 'finalImageGhost museumFrame museumFrame1 skeleton';
+      ghost.style.setProperty('--reveal-ar', puzzle.referenceAspectRatio || '4 / 3');
+
       const img = document.createElement('img');
       img.className = 'finalImage museumFrame museumFrame1';
       img.alt = t('finalImageAlt');
-      img.src = referenceImageUrl;
 
       svgWrap.innerHTML = '';
+      svgWrap.appendChild(ghost);
       svgWrap.appendChild(img);
+      signalSkeletonReady();
 
       const show = () => {
         // Ensure we have at least one frame with opacity:0 before showing
         requestAnimationFrame(() => {
+          ghost.remove();
           img.classList.add('show');
         });
       };
+      // Plain URL, not fetched+blob-cached for offline use — see
+      // setMenuThumb's comment for the full story (reference images are
+      // ~19MB full-resolution photos; this is where the memory spike from
+      // blob-decoding them was actually discovered, on a real device). If
+      // the network request itself fails (offline), fall back to a cached
+      // copy if the Cache Storage API happens to already have one (nothing
+      // currently populates this cache key — the explicit per-puzzle
+      // download feature that used to is on hold, see TODO.md).
+      img.addEventListener('error', async () => {
+        try {
+          const cache = await openAssetCache();
+          const cached = cache ? await cache.match(referenceImageUrl) : null;
+          if (cached) {
+            const blob = await cached.blob();
+            img.src = URL.createObjectURL(blob);
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, { once: true });
+      img.src = referenceImageUrl;
       if (img.complete) show();
       else img.addEventListener('load', show, { once: true });
 
@@ -3372,6 +3802,7 @@
         const loader = document.createElement('div');
         loader.className = 'paintingLoader';
         svgWrap.appendChild(loader);
+        signalSkeletonReady();
 
         // Ensure palette is visible when starting/restarting a painting.
         const paletteEl = document.querySelector('.palette');
@@ -3559,19 +3990,43 @@
     // that square (the "passepartout"), so unlike the old per-item probe
     // that resized the frame itself, this never needs to know the image's
     // real dimensions at all.
+    //
+    // Deliberately a plain background-image URL, not fetched+blob-cached for
+    // offline use the way loadSvg's SVG text is — reference images turned
+    // out to be ~19MB each (full-resolution photos), and an earlier version
+    // of this function fetched+blob-decoded one per completed history/
+    // archive item, up to 20 of them concurrently on every menu render,
+    // which was a serious memory spike that broke rendering on a real
+    // device (confirmed: reverting this fixed it). The hero thumb and the
+    // completion reveal image went through the same revert, for the same
+    // reason, even though each is only a single image — not worth the risk
+    // for an offline nice-to-have. A plain URL lets the browser's own image
+    // pipeline handle it — lazily, progressively,
+    // without holding the full decoded bytes as a JS-visible Blob — at the
+    // cost of these specific thumbnails not surviving a fully offline
+    // reload (only today's active puzzle and an in-progress reveal do).
     function setMenuThumb(thumbEl, referenceImageUrl, completed) {
       thumbEl.classList.add('museumFrame');
       thumbEl.classList.remove('skeleton');
-      if (completed) {
+      // completed && no thumbnail yet (reference_thumbnail_storage_path not
+      // generated for this puzzle — see fetchNumberedPuzzleHistory): a blank
+      // cream mat rather than fetching the ~19MB original, which is the
+      // real-device crash this whole thumbnail column exists to avoid.
+      if (completed && referenceImageUrl) {
         thumbEl.textContent = '';
-        thumbEl.classList.remove('menuThumbBlank');
+        thumbEl.classList.remove('menuThumbBlank', 'menuThumbUnpainted');
         thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
         thumbEl.style.backgroundSize = 'contain';
         thumbEl.style.backgroundRepeat = 'no-repeat';
         thumbEl.style.backgroundPosition = 'center';
-      } else {
-        thumbEl.textContent = '✏️';
+      } else if (completed) {
+        thumbEl.textContent = '';
         thumbEl.classList.add('menuThumbBlank');
+        thumbEl.classList.remove('menuThumbUnpainted');
+        thumbEl.style.backgroundImage = 'none';
+      } else {
+        thumbEl.textContent = '';
+        thumbEl.classList.add('menuThumbBlank', 'menuThumbUnpainted');
         thumbEl.style.backgroundImage = 'none';
       }
     }
@@ -3584,26 +4039,38 @@
     // own shape at size, not inset it further. Needs the probe purely to
     // feed that ratio into --hero-ar; the CSS does the actual
     // width-vs-height decision.
-    function setHeroThumb(thumbEl, referenceImageUrl, completed) {
+    function setHeroThumb(thumbEl, referenceImageUrl, completed, aspectRatio) {
       thumbEl.classList.add('museumFrame');
       thumbEl.classList.remove('skeleton');
       if (completed) {
         thumbEl.textContent = '';
-        thumbEl.classList.remove('menuThumbBlank');
-        thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
+        thumbEl.classList.remove('menuThumbBlank', 'menuThumbUnpainted');
         thumbEl.style.backgroundSize = 'contain';
         thumbEl.style.backgroundRepeat = 'no-repeat';
         thumbEl.style.backgroundPosition = 'center';
-        const probe = new Image();
-        probe.onload = () => {
-          if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
-            thumbEl.style.setProperty('--hero-ar', `${probe.naturalWidth} / ${probe.naturalHeight}`);
-          }
-        };
-        probe.src = referenceImageUrl;
+        // Plain URL, not fetched+blob-cached for offline use — see
+        // setMenuThumb's comment for why (~19MB full-resolution reference
+        // images; fetching+blob-decoding one held enough memory to break
+        // rendering on a real device).
+        thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
+        if (aspectRatio) {
+          // Known up front (see mapPuzzleRow/reference_width/height) — no
+          // need to fetch+decode the image just to learn its shape.
+          thumbEl.style.setProperty('--hero-ar', aspectRatio);
+        } else {
+          // Puzzle published before reference_width/height existed: fall
+          // back to probing the image itself, same as before.
+          const probe = new Image();
+          probe.onload = () => {
+            if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
+              thumbEl.style.setProperty('--hero-ar', `${probe.naturalWidth} / ${probe.naturalHeight}`);
+            }
+          };
+          probe.src = referenceImageUrl;
+        }
       } else {
-        thumbEl.textContent = '✏️';
-        thumbEl.classList.add('menuThumbBlank');
+        thumbEl.textContent = '';
+        thumbEl.classList.add('menuThumbBlank', 'menuThumbUnpainted');
         thumbEl.style.backgroundImage = 'none';
         thumbEl.style.removeProperty('--hero-ar');
       }
@@ -3675,6 +4142,19 @@
       return item;
     }
 
+    // Resolved as soon as the current route's own skeleton/ghost placeholder
+    // is in the DOM — see renderMenu/loadAndShow/revealOriginalInWrap for
+    // where each fires it, and boot() for why: hiding the splash on this,
+    // instead of waiting for the network fetches those trigger to finish,
+    // is what lets those already-built skeleton loaders (the shimmering
+    // history/archive cards, the today-hero skeleton, the puzzle canvas's
+    // sketch-sweep, the reveal ghost) actually be seen during navigation,
+    // rather than sitting hidden behind a color-wipe + three dots the whole
+    // time. Reassigned fresh by boot() on every page load (navigation here
+    // is reload-based — see parsePuzzleHash's comment — so there's exactly
+    // one boot() per document, no cross-navigation staleness to worry about).
+    let signalSkeletonReady = () => {};
+
     async function renderMenu() {
       document.getElementById('menuOverlay').classList.add('show');
       showBannerIfReady();
@@ -3691,6 +4171,7 @@
       todayStatusEl.classList.add('skeletonText', 'skeleton');
       todayStatusEl.style.width = '5em';
       renderSkeletonHistoryCards(historyStripEl0, 6);
+      signalSkeletonReady();
 
       const [todayResult, historyResult] = await Promise.allSettled([fetchActivePuzzle(), fetchRecentPuzzleHistory()]);
 
@@ -3702,7 +4183,7 @@
       if (todayResult.status === 'fulfilled') {
         const progress = getPuzzleProgress(todayResult.value.puzzleId);
         todayStatus.textContent = menuStatusLabel(progress);
-        setHeroThumb(todayThumb, todayResult.value.referenceImageUrl, progress.completed);
+        setHeroThumb(todayThumb, todayResult.value.referenceImageUrl, progress.completed, todayResult.value.referenceAspectRatio);
         todayCard.addEventListener('click', () => goToPuzzle('today'));
       } else {
         console.error(todayResult.reason);
@@ -3716,6 +4197,13 @@
       historyStripEl.innerHTML = '';
       const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
       if (historyResult.status === 'rejected') console.error(historyResult.reason);
+      // Nothing at all to show (no cached today, no cached history) and it
+      // looks like a connectivity problem — the disabled today-card message
+      // below is easy to miss, so escalate to the blocking offline screen
+      // instead of leaving the user staring at an otherwise-empty menu.
+      if (todayResult.status === 'rejected' && !historyRows.length && isNetworkFailure(todayResult.reason)) {
+        showOfflineOverlay();
+      }
       if (!historyRows.length) {
         const empty = document.createElement('div');
         empty.className = 'menuHistoryEmpty';
@@ -3940,7 +4428,11 @@
     async function boot() {
       pnbMark('pnb:boot-start');
       hideNativeSplash();
-      wireViewportSizeSync();
+      // Awaited so nothing width-dependent (the archive/history grid,
+      // every thumbnail's own aspect-ratio sizing) gets built against a
+      // still-stale post-reload viewport value — see wireViewportSizeSync's
+      // comment for the exact failure mode this closes.
+      const viewportSettled = wireViewportSizeSync();
       PnbAdMob.init();
 
       // The splash now stays up and masks EVERY boot, not just the first —
@@ -3969,6 +4461,38 @@
       // covering it has actually finished hiding, below.
       adsReady = false;
 
+      // Idempotent — see the two call sites below. First boot always goes
+      // through the finally block's full-content path (unchanged: the
+      // padded brand-moment animation, then hide once truly everything is
+      // ready). Every later navigation instead hides as soon as the
+      // destination route's own skeleton is in the DOM (see
+      // signalSkeletonReady's comment) via the race below, so what's
+      // actually revealed underneath the splash is a shimmering skeleton —
+      // not the finished puzzle popping in, but also not three blank dots
+      // sitting over nothing. The finally block still runs its hide too, as
+      // a safety net (e.g. a route that never calls signalSkeletonReady) —
+      // the guard just makes that a no-op once this has already fired.
+      let splashRevealed = false;
+      async function revealSplashOnce() {
+        if (splashRevealed) return;
+        splashRevealed = true;
+        // One more beat behind the mask before revealing anything: a fresh
+        // reload can still be mid-reflow right as this resolves (e.g.
+        // WKWebView settling its real bounds a frame late — see
+        // wireViewportSizeSync's ResizeObserver/double-rAF correction for
+        // that specific case) and two rAFs is enough for any such pending
+        // layout to finish, so it never becomes visible.
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        hideWebSplash();
+        adsReady = true;
+        showBannerIfReady();
+      }
+
+      const skeletonReady = new Promise((resolve) => { signalSkeletonReady = resolve; });
+      if (!isFirstBoot) {
+        skeletonReady.then(revealSplashOnce);
+      }
+
       const bootStarted = Date.now();
       try {
         I18N = await loadTranslations(LANG);
@@ -3976,6 +4500,7 @@
         document.documentElement.lang = LANG;
         applyStaticTranslations();
         wireTopbarHeightSync();
+        await viewportSettled;
 
         const requested = parsePuzzleHash(location.hash);
         if (requested === null) {
@@ -3995,24 +4520,20 @@
           const remaining = SPLASH_ANIMATION_MS - (Date.now() - bootStarted);
           if (remaining > 0) await sleep(remaining);
         }
-        // One more beat behind the mask before revealing anything: a fresh
-        // reload can still be mid-reflow right as this resolves (e.g.
-        // WKWebView settling its real bounds a frame late — see
-        // wireViewportSizeSync's ResizeObserver/double-rAF correction for
-        // that specific case) and two rAFs is enough for any such pending
-        // layout to finish, so it never becomes visible.
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        hideWebSplash();
-        adsReady = true;
-        showBannerIfReady();
+        await revealSplashOnce();
       }
     }
 
     wireDebugBanner();
     wireProductionErrorOverlay();
+    wireOfflineOverlay();
 
     boot().catch((err) => {
       console.error(err);
+      if (isNetworkFailure(err)) {
+        showOfflineOverlay();
+        return;
+      }
       const isFile = window.location.protocol === 'file:';
       if (IS_PRODUCTION) {
         showProductionError(isFile ? 'FILE_PROTOCOL' : (err.code || 'BOOT_FAILED'));

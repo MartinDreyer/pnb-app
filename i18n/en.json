@@ -57,5 +57,11 @@
   "errorLoadPuzzleFailed": "Failed to load active puzzle ({{status}})",
   "errorLoadSvgFailed": "Failed to load SVG ({{status}}): {{url}}",
   "errorGenericProduction": "We're sorry, there was an error. {{code}}",
-  "errorPopupCloseLabel": "OK"
+  "errorPopupCloseLabel": "OK",
+  "offlineTitle": "No internet connection",
+  "offlineMessage": "Mindfill needs an internet connection to load new paintings.",
+  "offlineMessageWithDownload": "Mindfill needs an internet connection to load new paintings. You can still open a painting you downloaded earlier.",
+  "offlineUseDownloadedButton": "Open downloaded painting",
+  "offlineQuitButton": "Quit",
+  "offlineTryAgainLink": "Try again"
 }
