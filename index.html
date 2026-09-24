@@ -911,6 +911,39 @@
       display: none;
     }
 
+    /* quickNav's plain color wipe has nothing else moving on screen, so a
+       navigation that takes longer than a frame or two (the puzzle fetch +
+       SVG load in goToPuzzle/backToMenu) reads as the app having frozen
+       rather than as a transition in progress. This is the wipe's only
+       piece of motion — deliberately small and dim rather than the full
+       brand mark, so it reads as "still working" and not as a second
+       attention-grabbing flash. Hidden outside quickNav (the first boot's
+       .splashMark is already the loading affordance). */
+    .splashQuickNavDots {
+      display: none;
+      gap: 10px;
+    }
+
+    .splashOverlay.quickNav .splashQuickNavDots {
+      display: flex;
+    }
+
+    .splashQuickNavDots span {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      animation: splashQuickNavPulse 1s ease-in-out infinite;
+    }
+
+    .splashQuickNavDots span:nth-child(2) { animation-delay: 0.15s; }
+    .splashQuickNavDots span:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes splashQuickNavPulse {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.7); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+
     .splashMark {
       position: relative;
       width: 160px;
@@ -1199,25 +1232,73 @@
       --frame-shadow: #7a4f1a; --frame-base: #d19c3f; --frame-hi: #ffe6a8; --frame-trim: #4a2e0e;
     }
 
-    /* Small brass plaque caption under a framed thumbnail, like a museum
-       placard — shared by the "today" hero card and every history/archive
-       item (built in buildHistoryCard). */
+    /* Small brushed-steel label under a framed thumbnail, like a modern
+       engraved wall tag — a flat aluminum surface (a soft diagonal
+       brushed-metal grain plus a gentle overall gradient, not gold/brass),
+       square-cut corners, a soft lifted drop shadow, and plain left-aligned
+       sans text (bold name/number, lighter grey status line) instead of a
+       display serif — the clean, minimal look of a laser-etched museum
+       plate rather than an ornate cast one. */
     .menuTodayBody,
     .menuPlaque {
       display: flex;
       flex-direction: column;
+      gap: 2px;
+      position: relative;
+      box-sizing: border-box;
+      background:
+        repeating-linear-gradient(115deg,
+          rgba(255,255,255,0.5) 0px, rgba(255,255,255,0) 1px,
+          rgba(0,0,0,0) 2px, rgba(0,0,0,0.035) 3px),
+        linear-gradient(155deg, #f4f4f4 0%, #dcdcdc 40%, #ececec 62%, #cfcfcf 100%);
+      color: #1c1c1c;
+      padding: 6px 14px;
+      box-shadow:
+        0 6px 14px rgba(0,0,0,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.7),
+        inset 0 -1px 0 rgba(0,0,0,0.12);
+    }
+
+    /* Today's hero plaque: full width of its (much bigger) thumb above it,
+       left-aligned. */
+    .menuTodayBody {
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    /* Every archive/history plaque, by contrast, is a fixed width — just
+       wide enough for the longest status label ("Ikke startet") not to
+       clip — so all of them are the same size regardless of which status
+       or how short the puzzle number happens to be, centered under their
+       (also fixed-size) square thumb. */
+    .menuPlaque {
+      width: 108px;
       align-items: center;
-      gap: 1px;
-      background: linear-gradient(#e9cb80, #b98b3e);
-      color: #3a2408;
-      border-radius: 5px;
-      padding: 5px 14px;
-      box-shadow: 0 3px 7px rgba(0,0,0,0.35);
+    }
+
+    .menuPlaque .menuHistoryNumber,
+    .menuPlaque .menuStatus {
+      text-align: center;
+    }
+
+    .menuTodayHeading,
+    .menuHistoryNumber,
+    .menuStatus {
+      font-family: Roboto, ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      position: relative;
+      text-align: left;
+    }
+
+    .menuStatus {
+      color: #444;
     }
 
     .menuTodayCard {
       width: 100%;
-      max-width: 320px;
+      /* Nearly full width of the menu column (see #menuTodayThumb) — up
+         from the old fixed 320px, which kept even a wide landscape
+         painting boxed down to a small square-ish thumbnail. */
+      max-width: 640px;
       margin: 0 auto 30px;
       display: flex;
       flex-direction: column;
@@ -1239,11 +1320,13 @@
     }
 
     .menuThumb {
-      width: 210px;
-      height: 210px;
       object-fit: cover;
       flex: none;
-      background: #f6f1e2;
+      /* Off-white/vanilla, not a grayer beige — this is the passepartout
+         mat that shows around a contained painting (see .menuHistoryItem
+         .menuThumb) as well as the unpainted placeholder's own canvas
+         color (see .menuThumbBlank). */
+      background: #faf3df;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1252,20 +1335,35 @@
       /* Border widths vary per item (3-14px, see the nth-child cycle below)
          for a hand-hung look. Without border-box, that border is added on
          top of width/height instead of eating into them, so a heavy-bordered
-         thumb's actual footprint balloons past its 130px grid cell and
-         visibly spills into the next column/row — the layout "disordering"
-         seen in debug/disorder.png. */
+         thumb's actual footprint balloons past its grid cell and visibly
+         spills into the next column/row — the layout "disordering" seen in
+         debug/disorder.png. */
       box-sizing: border-box;
     }
 
     /* Unpainted-puzzle placeholder: a plain primed canvas rather than the
-       photographic reference image (see setMenuThumb). */
+       photographic reference image (see setMenuThumb). No opacity dimming
+       any more — an unstarted puzzle read as too muted/grayed-out, like it
+       was disabled rather than just waiting to be picked. */
     .menuThumbBlank {
-      background: #f6f1e2 !important;
-      opacity: 0.6;
+      background: #faf3df !important;
     }
 
+    /* Today's active puzzle: the one thumbnail that shows the painting at
+       its own real shape rather than square — sized as large as it can be
+       without either dimension taking over the screen. width:100% (up to
+       .menuTodayCard's own max-width) plus max-height:50dvh, with no
+       explicit height, lets the browser's aspect-ratio-aware sizing (same
+       mechanism as a plain <img> with max-width/max-height) pick whichever
+       bound actually binds: a landscape painting fills the width and stops
+       well short of 50dvh tall, a portrait one hits the 50dvh ceiling and
+       ends up narrower than full width — see setHeroThumb for where the
+       real aspect-ratio value gets written in. */
     #menuTodayThumb {
+      width: 100%;
+      height: auto;
+      max-height: 50dvh;
+      aspect-ratio: var(--hero-ar, 4 / 3);
       border-width: 10px;
     }
 
@@ -1278,7 +1376,7 @@
 
     .menuStatus {
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 500;
     }
 
     .menuHistoryTitle {
@@ -1313,7 +1411,10 @@
     @media (min-width: 700px) {
       .menuHistoryStrip {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        /* Bumped up from 130px alongside the square-frame change below —
+           bigger, uniform square tiles mean fewer fit per row (4-ish on an
+           iPad-width screen), which is the intended trade for uniformity. */
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
         row-gap: 26px;
         column-gap: 18px;
         overflow-x: visible;
@@ -1327,7 +1428,7 @@
 
     .menuHistoryItem {
       flex: none;
-      width: 130px;
+      width: 150px;
       scroll-snap-align: start;
       display: flex;
       flex-direction: column;
@@ -1348,11 +1449,32 @@
       transform: translateY(1px);
     }
 
+    /* Every archive/history frame is a plain square — the passepartout mat
+       (the plain vanilla .menuThumb background, see setMenuThumb) is what
+       absorbs each painting's own aspect ratio, rather than the frame
+       itself changing shape per painting like it used to. That's what
+       keeps the grid uniform and makes the skeleton/ghost placeholder
+       trivial (same fixed square, no per-item probing needed). An even
+       padding on every side (background-origin:content-box keeps the
+       contain-fit image out of it, so it reads as a mat rather than the
+       image just being small) means the mat shows all the way around even
+       on the axis a given painting's own shape already fills — deliberately
+       NOT using background-clip:content-box here, which would also clip
+       the background-COLOR to the same box and leave the padding
+       transparent instead of matted (visible as a black gap over the dark
+       menu wall behind it). Only these small tiles get a mat — the hero
+       thumb (#menuTodayThumb) and the finished-puzzle reveal image
+       deliberately don't, since showing the painting at its own real shape
+       is the whole point there. */
     .menuHistoryItem .menuThumb {
       width: 100%;
-      height: 90px;
+      aspect-ratio: 1;
+      height: auto;
       font-size: 20px;
       color: #b8ac8f;
+      box-sizing: border-box;
+      background-origin: content-box;
+      padding: 10px;
     }
 
     /* Cycle 6 gold palettes and, separately, 7 border widths across the wall
@@ -1516,7 +1638,10 @@
     .archiveGrid {
       margin-top: 18px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      /* See .menuHistoryStrip's matching @media rule — bigger, uniform
+         square tiles fit fewer per row (4-ish on iPad width), which is
+         the intended trade for the squared-off grid. */
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
       row-gap: 26px;
       column-gap: 18px;
     }
@@ -1610,23 +1735,32 @@
       opacity: 0.7;
     }
 
-    /* Completion trivia panel — a museum wall placard (parchment tone + a
-       gold top edge) sitting in normal flow below the framed painting (see
-       .svgWrap.revealed), not a fixed bottom sheet covering it. */
+    /* Completion trivia panel — a full-size brushed-steel museum wall
+       label (matching the small .menuPlaque caption's material), sitting
+       in normal flow below the framed painting (see .svgWrap.revealed),
+       not a fixed bottom sheet covering it. Same aluminum grain, square-cut
+       corners and lifted drop shadow as .menuPlaque, just scaled up, with
+       left-aligned type (bold title, lighter subtitle/facts) instead of
+       the old centered serif placard — a clean laser-etched tag rather
+       than an ornate cast one. */
     .triviaPanel {
-      --muted: #7a6a4a;
-      /* Plain system sans, not the rounded ui-rounded stack used to sit here —
-         SF Pro Rounded read too soft/toy-like for an engraved museum placard.
-         Still sans-serif (no return to the old serif look), just sturdier. */
-      font-family: ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      --muted: #444;
+      font-family: Roboto, ui-sans-serif, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
       width: 100%;
       max-width: 420px;
-      background: #f6efdd;
-      border-top: 4px solid #c79a44;
-      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-      padding: 14px 18px;
+      position: relative;
+      color: #1c1c1c;
+      background:
+        repeating-linear-gradient(115deg,
+          rgba(255,255,255,0.5) 0px, rgba(255,255,255,0) 1px,
+          rgba(0,0,0,0) 2px, rgba(0,0,0,0.035) 3px),
+        linear-gradient(155deg, #f4f4f4 0%, #dcdcdc 40%, #ececec 62%, #cfcfcf 100%);
+      box-shadow:
+        0 10px 28px rgba(0,0,0,0.4),
+        inset 0 1px 0 rgba(255,255,255,0.7),
+        inset 0 -1px 0 rgba(0,0,0,0.12);
+      padding: 16px 20px;
       box-sizing: border-box;
-      border-radius: 0 0 4px 4px;
       opacity: 0;
       transform: translateY(8px);
       transition: opacity 420ms ease, transform 420ms ease;
@@ -1638,18 +1772,18 @@
     }
 
     .triviaTitle {
-      font-weight: 750;
-      font-size: 17px;
-      letter-spacing: 0.2px;
-      text-align: center;
-      margin: 0 0 2px;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: 0.1px;
+      text-align: left;
+      margin: 0;
     }
 
     .triviaArtist {
       font-size: 13px;
       color: var(--muted);
-      text-align: center;
-      margin-bottom: 10px;
+      text-align: left;
+      margin: 3px 0 12px;
     }
 
     .triviaArtist a {
@@ -1684,9 +1818,9 @@
       font-size: 13px;
       line-height: 1.45;
       color: var(--text);
-      background: rgba(255,255,255,0.55);
-      border: 1px solid rgba(199,154,68,0.4);
-      border-radius: 12px;
+      background: rgba(255,255,255,0.6);
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 10px;
       padding: 10px 12px;
       margin: 0 0 12px;
     }
@@ -1723,6 +1857,7 @@
         <div class="splashSwatch"></div>
       </div>
       <div class="splashTitle"><span class="brandMind">Mind</span><span class="brandFill">fill</span></div>
+      <div class="splashQuickNavDots" aria-hidden="true"><span></span><span></span><span></span></div>
     </div>
 
     <div class="menuOverlay" id="menuOverlay">
@@ -3418,6 +3553,12 @@
     // rendered preview of the actual SVG artwork — fetching/rasterizing
     // every history item's puzzle SVG just for a home-screen thumbnail
     // isn't worth the extra load work, and it keeps the reveal a surprise.
+    // Every history/archive frame is a fixed square (see .menuHistoryItem
+    // .menuThumb) — background-size:contain plus the plate's own cream
+    // background is what letterboxes each painting's own aspect ratio into
+    // that square (the "passepartout"), so unlike the old per-item probe
+    // that resized the frame itself, this never needs to know the image's
+    // real dimensions at all.
     function setMenuThumb(thumbEl, referenceImageUrl, completed) {
       thumbEl.classList.add('museumFrame');
       thumbEl.classList.remove('skeleton');
@@ -3428,16 +3569,35 @@
         thumbEl.style.backgroundSize = 'contain';
         thumbEl.style.backgroundRepeat = 'no-repeat';
         thumbEl.style.backgroundPosition = 'center';
-        // Size the frame itself to the painting's real proportions instead
-        // of a fixed square/box — a plain preload just to read
-        // naturalWidth/naturalHeight (the visible background-image above
-        // is already what actually paints). Keeps the CSS-declared
-        // width/height as a fallback until this resolves.
+      } else {
+        thumbEl.textContent = '✏️';
+        thumbEl.classList.add('menuThumbBlank');
+        thumbEl.style.backgroundImage = 'none';
+      }
+    }
+
+    // Today's active puzzle is the one thumbnail shown at its own real
+    // aspect ratio instead of squared off (see #menuTodayThumb) — a
+    // landscape painting should read as nearly full-width, a portrait one
+    // capped at 50dvh tall. No passepartout mat here (unlike setMenuThumb's
+    // grid tiles) — the whole point of the hero is to show the painting's
+    // own shape at size, not inset it further. Needs the probe purely to
+    // feed that ratio into --hero-ar; the CSS does the actual
+    // width-vs-height decision.
+    function setHeroThumb(thumbEl, referenceImageUrl, completed) {
+      thumbEl.classList.add('museumFrame');
+      thumbEl.classList.remove('skeleton');
+      if (completed) {
+        thumbEl.textContent = '';
+        thumbEl.classList.remove('menuThumbBlank');
+        thumbEl.style.backgroundImage = `url("${referenceImageUrl}")`;
+        thumbEl.style.backgroundSize = 'contain';
+        thumbEl.style.backgroundRepeat = 'no-repeat';
+        thumbEl.style.backgroundPosition = 'center';
         const probe = new Image();
         probe.onload = () => {
           if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
-            thumbEl.style.aspectRatio = `${probe.naturalWidth} / ${probe.naturalHeight}`;
-            thumbEl.style.height = 'auto';
+            thumbEl.style.setProperty('--hero-ar', `${probe.naturalWidth} / ${probe.naturalHeight}`);
           }
         };
         probe.src = referenceImageUrl;
@@ -3445,8 +3605,7 @@
         thumbEl.textContent = '✏️';
         thumbEl.classList.add('menuThumbBlank');
         thumbEl.style.backgroundImage = 'none';
-        thumbEl.style.aspectRatio = '';
-        thumbEl.style.height = '';
+        thumbEl.style.removeProperty('--hero-ar');
       }
     }
 
@@ -3543,7 +3702,7 @@
       if (todayResult.status === 'fulfilled') {
         const progress = getPuzzleProgress(todayResult.value.puzzleId);
         todayStatus.textContent = menuStatusLabel(progress);
-        setMenuThumb(todayThumb, todayResult.value.referenceImageUrl, progress.completed);
+        setHeroThumb(todayThumb, todayResult.value.referenceImageUrl, progress.completed);
         todayCard.addEventListener('click', () => goToPuzzle('today'));
       } else {
         console.error(todayResult.reason);
