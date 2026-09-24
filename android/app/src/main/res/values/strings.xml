@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Paint by Numbers</string>
-    <string name="title_activity_main">Paint by Numbers</string>
+    <string name="app_name">Mindfill</string>
+    <string name="title_activity_main">Mindfill</string>
     <string name="package_name">dk.pnb.app</string>
     <string name="custom_url_scheme">dk.pnb.app</string>
 </resources>

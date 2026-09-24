@@ -70,3 +70,23 @@ new items to the end of the relevant section rather than inserting mid-list.
 - [x] Update the cheat swatch's label to "Udfyld (næsten) alt" and adjust its CSS so the longer text fits
 - [x] Show the puzzle's serial number in the topbar (e.g. "Maleri #4") so reopening an old puzzle from the menu/Archive makes clear which one is open
 - [x] Remove the stale "guess the painting" wording from the topbar hint text; remove the two outdated guessing-related backlog ideas
+
+## Done (2026-09-22)
+
+- [x] Integrate `@capacitor-community/admob`: native banner ad + layout reserved for it (`--banner-h`), rewarded ad to grant extra hints once the free limit is used up
+- [x] Drop the free hint limit from 5 to 3, now that rewarded-ad top-ups exist; add a "watch an ad" affordance in place of just disabling the hint button
+- [x] Avoid burning a hint/ad view when re-tapping the hint button on a still-unpainted region it already pointed to
+- [x] Restyle the home/archive, active-puzzle and completion-reveal screens as a "museum" theme (gallery wall of framed puzzles, easel-backed canvas, framed reveal + placard), from user-supplied mockups and asset pack
+- [x] Add a reusable `.museumFrame` CSS `border-image` utility (4 real-photo frame styles, corner+edge tiles built into one JPG per style with correct rotation-based corner/edge pairing) and wire `build:www` to also copy the new `museum/` asset folder
+- [x] Rework the completion reveal to hang the framed painting on the wall with its plaque below (matching the mockup), instead of leaving it sitting on the easel/canvas
+- [x] Fix `.menuArchiveBtn`/`.archiveCloseBtn` rendering near-invisible (near-black text, too-transparent background) against the dark green wall
+- [x] Stop reopening an already-completed puzzle from showing a full-screen interstitial ad; go straight to the reveal
+- [x] Stop the banner ad from appearing before the first-boot splash animation finishes
+- [x] Restyle the hint button as a lightbulb icon + count badge + label, per the mockup, instead of a text pill
+- [x] Rename the app to "Mindfill" (title, native app names, wordmark with a painted "fill")
+- [x] Make the swatch palette 2 rows instead of 1 (`grid-template-rows: repeat(2, 84px)`), raise `--palette-h`'s clamp to fit
+- [x] Simplify the gallery wall back to a uniform grid (drop the per-item size/vertical-offset variation that was clipping some frames, e.g. #18/#16/#10) while keeping the slight per-item rotation
+- [x] Rebuild the `museumFrame` corner/edge assets with correct rotation-based (not mirrored) pairing and matched corner/edge scaling, back on real `border-image` instead of the CSS-gradient fallback
+- [x] Uppercase the Mindfill wordmark; pale-gold "Mind" and a brighter, more vivid "fill" gradient for contrast against the green wall
+- [x] Switch the completion plaque's font from serif to a rounded, more "app-y" system font
+- [x] Rebuild `.museumFrame` again to match a real gold-frame reference photo — a `conic-gradient` border-image with a per-side (not per-box) shadow→highlight→shadow repeat, so every side gets its own centred highlight and every corner its own mitred shadow
