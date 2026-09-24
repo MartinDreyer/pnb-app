@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Paint by Numbers</string>
+        <string>Mindfill</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -75,5 +75,24 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- AdMob (see admob.js / config.js ADMOB_APP_ID). This is the test App ID —
+	     it must match config.js's ADMOB_APP_ID.ios, and changing it requires a
+	     native rebuild (not just editing config.js). Replace with the real App
+	     ID from the AdMob console before release. SKAdNetworkItems here only
+	     lists Google's own network; add the rest of Google's list from
+	     https://developers.google.com/admob/ios/quick-start#update_your_infoplist
+	     before App Store submission. NSUserTrackingUsageDescription is the
+	     system prompt string shown by the explicit ATT request in admob.js. -->
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>Used to show you more relevant ads and support free access to new paintings each week.</string>
 </dict>
 </plist>

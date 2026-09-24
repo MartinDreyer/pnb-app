@@ -5,7 +5,7 @@
   "main": "config.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:www": "rm -rf www && mkdir -p www && cp index.html config.js logo.png www/ && cp -r i18n www/i18n",
+    "build:www": "rm -rf www && mkdir -p www && cp index.html config.js admob.js logo.png www/ && cp -r i18n www/i18n && cp -r museum www/museum",
     "cap:sync": "npm run build:www && npx cap sync"
   },
   "repository": {
@@ -21,6 +21,7 @@
   },
   "homepage": "https://github.com/Beus007/pnb-app#readme",
   "dependencies": {
+    "@capacitor-community/admob": "^8.1.0",
     "@capacitor/android": "^8.5.0",
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
