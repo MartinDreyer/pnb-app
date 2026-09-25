@@ -4248,7 +4248,12 @@
       item.className = 'menuHistoryItem';
 
       const thumb = document.createElement('div');
-      thumb.className = 'menuThumb';
+      // museumFrame (not just menuThumb) is required here — it's what
+      // carries transform: translateZ(0), the workaround for the WKWebView
+      // compositing bug described at .menuTitle's comment above. Without it
+      // these real thumbnails (unlike the museumFrame-bearing skeleton they
+      // replace) can silently never paint on-device.
+      thumb.className = 'menuThumb museumFrame';
       setMenuThumb(thumb, row.referenceImageUrl, progress.completed);
 
       const plaque = document.createElement('div');
@@ -4392,6 +4397,70 @@
 
     function closeArchive() {
       document.getElementById('archiveOverlay').classList.remove('show');
+    }
+
+    // iOS-style edge-swipe-back: a drag starting within EDGE px of the left
+    // screen edge, dragged right past THRESHOLD, backs out of whatever's on
+    // top (archive overlay if it's open, else the puzzle screen). Bound once
+    // per boot at the document level rather than per-screen, since which
+    // action applies (or whether one applies at all) can change without a
+    // fresh navigation (e.g. opening/closing the archive over the menu).
+    //
+    // Armed only from the left EDGE strip deliberately: the puzzle canvas's
+    // own single-finger touchstart (wireCanvasInteractions, bound to the svg
+    // element itself) already owns pan gestures everywhere else, and
+    // .svgWrap's 20px padding keeps the svg's hit area inset from the true
+    // screen edge, so this and panning never fight over the same touch.
+    function wireSwipeBack() {
+      const EDGE = 24;
+      const THRESHOLD = 80;
+      const MAX_VERTICAL = 60;
+      let active = false;
+      let startX = 0;
+      let startY = 0;
+
+      function currentBackAction() {
+        const archive = document.getElementById('archiveOverlay');
+        if (archive && archive.classList.contains('show')) return closeArchive;
+        const home = document.getElementById('homeBtn');
+        if (home && home.classList.contains('show')) return backToMenu;
+        return null;
+      }
+
+      document.addEventListener('touchstart', (e) => {
+        active = false;
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+        if (t.clientX > EDGE) return;
+        if (!currentBackAction()) return;
+        active = true;
+        startX = t.clientX;
+        startY = t.clientY;
+      }, { passive: true });
+
+      document.addEventListener('touchmove', (e) => {
+        if (!active || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - startX;
+        const dy = Math.abs(e.touches[0].clientY - startY);
+        // A mostly-vertical drag (e.g. scrolling the archive grid from near
+        // its edge) isn't a back gesture — stop tracking rather than fire.
+        if (dy > MAX_VERTICAL && dy > dx) active = false;
+      }, { passive: true });
+
+      document.addEventListener('touchend', (e) => {
+        if (!active) return;
+        active = false;
+        const t = e.changedTouches[0];
+        if (!t) return;
+        const dx = t.clientX - startX;
+        const dy = Math.abs(t.clientY - startY);
+        if (dx >= THRESHOLD && dy < MAX_VERTICAL) {
+          const action = currentBackAction();
+          if (action) action();
+        }
+      }, { passive: true });
+
+      document.addEventListener('touchcancel', () => { active = false; }, { passive: true });
     }
 
     function wireArchive() {
@@ -4627,6 +4696,7 @@
         document.documentElement.lang = LANG;
         applyStaticTranslations();
         wireTopbarHeightSync();
+        wireSwipeBack();
         await viewportSettled;
 
         const requested = parsePuzzleHash(location.hash);
