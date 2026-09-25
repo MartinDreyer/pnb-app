@@ -199,6 +199,18 @@
     .canvas.revealed {
       background: #16231a;
       overflow-y: auto;
+      /* The topbar and the palette are both hidden in this state (see
+         revealOriginalInWrap), so stop reserving their bands and give the
+         picture and its plaque the whole screen. Zeroing the top band here,
+         in the same class switch that hangs the painting, is also what keeps
+         --topbar-h's ResizeObserver from noticing the hidden topbar a frame
+         later and shrinking that band underneath the finished painting —
+         an upward slide the height of the topbar, a frame or two after
+         every single reveal. The inset
+         stays, though: the hidden topbar was also what kept the canvas clear
+         of the status bar / notch. */
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: calc(var(--banner-h, 0px) + env(safe-area-inset-bottom, 0px));
       /* .canvas is `display: grid; place-items: center` (for the normal,
          non-scrolling puzzle view). That align-items: center carries over
          here and is the actual thing centering the revealed painting+
@@ -329,41 +341,107 @@
       100% { background-position: 0% 0%; opacity: 0.4; }
     }
 
-    /* Final revealed PNG — framed like a museum piece (see .museumFrame)
-       and sized to its own aspect ratio (not stretched to fill the wrap)
-       so it reads as a picture hanging on the wall, not a canvas filling
-       the screen. Thicker border than the small gallery-wall thumbnails
-       since it's the screen's one hero image. */
-    .finalImage {
-      max-width: 100%;
-      max-height: 55vh;
-      width: auto;
-      height: auto;
+    /* The finished painting, hung on the wall: a museum-framed box (see
+       .museumFrame) at the painting's own aspect ratio rather than stretched
+       to fill the wrap, so it reads as a picture on a wall and not a canvas
+       filling the screen. Thicker border than the small gallery-wall
+       thumbnails since it's the screen's one hero image.
+
+       The frame — not the <img> — is what sits in .svgWrap.revealed's
+       layout, and it's sized entirely from numbers known before the photo is
+       even requested (--reveal-ar/--reveal-ar-num, from the puzzle's stored
+       reference dimensions — see revealOriginalInWrap). So the box is at its
+       final size from the first frame, the photo just fades in inside it,
+       and there is nothing for the reveal to jump from. This replaced a
+       separate placeholder element that stood in front of the image in the
+       same flex column: while loading, that column was two painting-sized
+       boxes tall and collapsed to one the moment the placeholder was swapped
+       out, which is what actually made the reveal jump.
+
+       Driving the WIDTH off the height ceiling — rather than setting
+       max-height and letting it fight aspect-ratio, which resolves by
+       silently breaking the ratio — is what keeps the box exactly on-ratio
+       whichever bound binds: the wrap's full width for a landscape painting,
+       ceiling height and correspondingly narrower for a portrait one. */
+    .finalImageFrame {
+      --reveal-frame-border: 12px;
+      --reveal-max-h: 60vh;
+      --reveal-max-h: 60dvh;
+      position: relative;
       background: white;
-      border-width: 12px;
+      /* Never let the flex column squeeze the painting to fit whatever the
+         plaque below it grows to — a resize here is exactly the jump this
+         structure exists to avoid. */
+      flex: none;
+    }
+
+    /* Sizing the frame needs .museumFrame in the selector, not .finalImageFrame
+       alone: .museumFrame sits further down this sheet, so at equal specificity
+       its own box-sizing/border-width would win (which is why the hero's
+       12px frame has in fact been rendering at the thumbnails' 8px).
+
+       box-sizing: border-box (so aspect-ratio describes the frame's OUTER box)
+       is load-bearing, not incidental — content-box is the obvious choice here,
+       since the inner box is the one the photo fills, but WebKit gets it wrong:
+       measured in WKWebView (the app's own engine — this does not reproduce in
+       Chrome), a content-box frame resolves the ratio against width minus the
+       border, i.e. ~20px too short, while the flex automatic minimum size
+       (min-height: auto) resolves it correctly. Those two only disagree while
+       the frame is a scroll container, because .skeleton's overflow: hidden
+       zeroes that automatic minimum — so the box silently snapped 20px taller
+       the moment the shimmer class came off at the end of the photo's fade,
+       shoving the plaque down with it. That was the last remaining jump in the
+       reveal (caught on a device screen recording, debug/jump.mov). The cost of
+       border-box is that the frame's inner box is then off the painting's ratio
+       by the border, which .finalImage's object-fit handles below. */
+    .finalImageFrame.museumFrame {
+      box-sizing: border-box;
+      border-width: var(--reveal-frame-border);
+      width: min(100%, calc(var(--reveal-max-h) * var(--reveal-ar-num, 1.3333)));
+      aspect-ratio: var(--reveal-ar, 4 / 3);
+      /* Belt and braces after the above: with no automatic minimum to
+         disagree with it, the height is the ratio's and nothing else's,
+         whatever any given engine thinks a flex item's minimum should be. */
+      min-height: 0;
+    }
+
+    /* Fills its frame. z-index keeps it above .skeleton's shimmer
+       pseudo-element (the frame keeps that class until the photo has finished
+       fading in over it, so the shimmer never flashes away to an empty white
+       frame), and the img's own white background is what hides the shimmer as
+       the fade progresses. transform: translateZ(0) for the same WebKit reason
+       as .menuTitle — this img had it via .museumFrame before the frame became
+       an element of its own.
+
+       object-fit: contain is the safe default — it never crops and never
+       stretches, which is what the rare puzzle whose --reveal-ar is only a
+       guessed 4/3 fallback (see mapPuzzleRow's comment) needs. But it also
+       leaves a couple of px of white down each side of every OTHER painting,
+       because the frame carries the ratio on its outer box (see above) so its
+       inner box is off by the border. Where the ratio came from the puzzle's
+       real stored dimensions, the mismatch is only that border artifact — a
+       fraction of a percent — so .finalImage.exact fills the frame edge to
+       edge instead, cropping those couple of px off a ~4000px-wide scan. */
+    .finalImage {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: white;
       display: block;
       opacity: 0;
       transition: opacity 2250ms ease;
+      transform: translateZ(0);
+    }
+
+    .finalImage.exact {
+      object-fit: cover;
     }
 
     .finalImage.show {
       opacity: 1;
-    }
-
-    /* Stand-in for .finalImage while the full-resolution reveal photo is
-       still loading — same reasoning as buildSkeletonHistoryCard: claim the
-       real footprint up front instead of popping in at full size once the
-       image decodes, which is what caused the reveal to visibly jump.
-       --reveal-ar is set from the puzzle's own SVG viewBox (see
-       revealOriginalInWrap) so the reserved box is the actual aspect ratio,
-       not a generic guess. */
-    .finalImageGhost {
-      width: min(90vw, 480px);
-      height: auto;
-      max-height: 55vh;
-      aspect-ratio: var(--reveal-ar, 4 / 3);
-      border-width: 12px;
-      box-sizing: border-box;
     }
 
     #pnb-svg path {
@@ -2433,7 +2511,7 @@
         // puzzle_reference_dimensions migration. null on puzzles published
         // before that column existed (reference_width/height are 0), so a
         // loading/reveal placeholder falls back to a generic guess instead
-        // (see .finalImageGhost/#menuTodayThumb's CSS var default).
+        // (see .finalImageFrame/#menuTodayThumb's CSS var default).
         referenceAspectRatio: puzzlesRow.reference_width ? `${puzzlesRow.reference_width} / ${puzzlesRow.reference_height}` : null,
         title: puzzlesRow.paintings ? puzzlesRow.paintings.title : '',
         artist: puzzlesRow.paintings ? puzzlesRow.paintings.artist : '',
@@ -3545,6 +3623,31 @@
       });
     }
 
+    // .svgWrap.revealed centers the painting + plaque stack, so anything
+    // that grows after the first layout would re-center that stack and slide
+    // the finished painting up under the user — the trivia plaque when its
+    // network-fetched details land is the big one, a late webfont reflowing
+    // its text the subtle one. So freeze the placement instead: once the
+    // stack is in the DOM, swap the centering for the exact top offset it
+    // just produced. The painting then stays where it was first painted and
+    // later growth extends downwards into .canvas.revealed's scroll area.
+    // Recomputed on resize/orientation change, where re-centering — on
+    // whatever the plaque has grown to by then — is what's wanted anyway.
+    function pinRevealedStack(svgWrap) {
+      const pin = () => {
+        svgWrap.style.justifyContent = '';
+        svgWrap.style.paddingTop = '';
+        const first = svgWrap.firstElementChild;
+        if (!first) return;
+        const offset = first.getBoundingClientRect().top - svgWrap.getBoundingClientRect().top;
+        svgWrap.style.justifyContent = 'flex-start';
+        svgWrap.style.paddingTop = `${Math.max(0, Math.round(offset))}px`;
+      };
+      pin();
+      window.addEventListener('resize', pin);
+      window.addEventListener('orientationchange', pin);
+    }
+
     // The finished puzzle moves off the easel and onto the museum wall: the
     // working canvas (.canvas/.svgWrap) swaps from the easel photo to the
     // same wallpaper background as the home menu (see .canvas.revealed/
@@ -3558,32 +3661,54 @@
       const topbarEl = document.querySelector('.topbar');
       if (topbarEl) topbarEl.style.display = 'none';
 
-      // Ghost claims the reveal image's real footprint immediately, sized
-      // off reference_width/height (see mapPuzzleRow/puzzle_reference_dimensions
+      // The frame claims the painting's real footprint immediately, sized off
+      // reference_width/height (see mapPuzzleRow/puzzle_reference_dimensions
       // migration) — known up front, unlike probing the SVG we were just
       // painting: that only exists when this session actually loaded/painted
       // the interactive puzzle first, not when reopening an already-completed
       // one straight from the menu/archive, which is the more common path
       // here. Falls back to a generic guess only for puzzles published
-      // before that column existed (referenceAspectRatio null).
-      const ghost = document.createElement('div');
-      ghost.className = 'finalImageGhost museumFrame museumFrame1 skeleton';
-      ghost.style.setProperty('--reveal-ar', puzzle.referenceAspectRatio || '4 / 3');
+      // before that column existed (referenceAspectRatio null). Set on
+      // svgWrap (shared ancestor) rather than on the frame so the whole
+      // revealed subtree reads one value. --reveal-ar-num is that same ratio
+      // as a plain number, which is what .finalImageFrame's width formula can
+      // actually do arithmetic with ("3780 / 2888" can't be multiplied
+      // inside calc()).
+      const revealAr = puzzle.referenceAspectRatio || '4 / 3';
+      const [arW, arH] = revealAr.split('/').map((n) => parseFloat(n));
+      svgWrap.style.setProperty('--reveal-ar', revealAr);
+      svgWrap.style.setProperty('--reveal-ar-num', String(arW > 0 && arH > 0 ? arW / arH : 4 / 3));
+
+      // One box for both states, rather than a placeholder element in front
+      // of the image: the frame is the loading placeholder (.skeleton
+      // shimmer) AND the loaded painting's container, so nothing ever enters
+      // or leaves this layout — see .finalImageFrame's CSS comment.
+      const frame = document.createElement('div');
+      frame.className = 'finalImageFrame museumFrame museumFrame1 skeleton';
 
       const img = document.createElement('img');
-      img.className = 'finalImage museumFrame museumFrame1';
+      // .exact = "--reveal-ar is this painting's real ratio, not the 4/3
+      // fallback", which is what lets the photo fill the frame rather than
+      // letterbox inside it — see .finalImage's CSS comment.
+      img.className = puzzle.referenceAspectRatio ? 'finalImage exact' : 'finalImage';
       img.alt = t('finalImageAlt');
+      frame.appendChild(img);
 
       svgWrap.innerHTML = '';
-      svgWrap.appendChild(ghost);
-      svgWrap.appendChild(img);
+      svgWrap.appendChild(frame);
       signalSkeletonReady();
 
       const show = () => {
         // Ensure we have at least one frame with opacity:0 before showing
         requestAnimationFrame(() => {
-          ghost.remove();
           img.classList.add('show');
+          // The shimmer stops only once the photo has finished fading in over
+          // it (dropping it up front would leave an empty white frame for the
+          // whole 2.25s fade); the timeout is a fallback for a transition
+          // that never fires, so the animation can't be left running.
+          const stopShimmer = () => frame.classList.remove('skeleton');
+          img.addEventListener('transitionend', stopShimmer, { once: true });
+          setTimeout(stopShimmer, 4000);
         });
       };
       // Plain URL, not fetched+blob-cached for offline use — see
@@ -3617,6 +3742,7 @@
       if (zoomControlsEl) zoomControlsEl.style.display = 'none';
 
       renderTriviaPanel(svgWrap, puzzle);
+      pinRevealedStack(svgWrap);
     }
 
     // `puzzle` is resolved by boot() before calling in — either today's active
@@ -4142,17 +4268,18 @@
       return item;
     }
 
-    // Resolved as soon as the current route's own skeleton/ghost placeholder
+    // Resolved as soon as the current route's own loading placeholder
     // is in the DOM — see renderMenu/loadAndShow/revealOriginalInWrap for
     // where each fires it, and boot() for why: hiding the splash on this,
     // instead of waiting for the network fetches those trigger to finish,
     // is what lets those already-built skeleton loaders (the shimmering
     // history/archive cards, the today-hero skeleton, the puzzle canvas's
-    // sketch-sweep, the reveal ghost) actually be seen during navigation,
-    // rather than sitting hidden behind a color-wipe + three dots the whole
-    // time. Reassigned fresh by boot() on every page load (navigation here
-    // is reload-based — see parsePuzzleHash's comment — so there's exactly
-    // one boot() per document, no cross-navigation staleness to worry about).
+    // sketch-sweep, the reveal's shimmering empty frame) actually be seen
+    // during navigation, rather than sitting hidden behind a color-wipe +
+    // three dots the whole time. Reassigned fresh by boot() on every page
+    // load (navigation here is reload-based — see parsePuzzleHash's comment —
+    // so there's exactly one boot() per document, no cross-navigation
+    // staleness to worry about).
     let signalSkeletonReady = () => {};
 
     async function renderMenu() {
