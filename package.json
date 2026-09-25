@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build:www": "rm -rf www && mkdir -p www && cp index.html config.js admob.js logo.png www/ && cp -r i18n www/i18n && cp -r museum www/museum",
-    "cap:sync": "npm run build:www && npx cap sync"
+    "cap:sync": "npm run build:www && npx cap sync",
+    "ios:fresh": "scripts/ios-fresh.sh"
   },
   "repository": {
     "type": "git",
